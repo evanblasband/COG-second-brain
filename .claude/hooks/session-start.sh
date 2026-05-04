@@ -28,6 +28,18 @@ else
 fi
 echo ""
 
+# ── Today's calendar (if Google auth is set up) ───────────────────────────────
+TOKEN="$VAULT_DIR/.auth/google-token.json"
+QUERY="$VAULT_DIR/scripts/query.py"
+if [[ -f "$TOKEN" ]] && [[ -f "$QUERY" ]]; then
+  echo "--- Today's Calendar ---"
+  python3 "$QUERY" calendar today 2>/dev/null || echo "(Calendar fetch failed — check token)"
+  echo ""
+else
+  echo "Calendar: not configured (run python scripts/google_auth.py)"
+  echo ""
+fi
+
 # ── Inbox check ───────────────────────────────────────────────────────────────
 INBOX_FILES=$(find "$VAULT_DIR/00-inbox" -name "*.md" -newer "$VAULT_DIR/00-inbox/MY-PROFILE.md" 2>/dev/null | grep -v "MY-PROFILE\|MY-INTERESTS\|MY-INTEGRATIONS" | wc -l)
 if [[ "$INBOX_FILES" -gt 0 ]]; then

@@ -6,6 +6,46 @@ Append new entries at the top. Each entry gets a date and a clear description of
 
 ---
 
+## 2026-05-04 — Day 3: Google Calendar Python CLI integration
+
+### New scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/google_auth.py` | One-time OAuth setup — guides through Google Cloud Console steps, runs browser auth flow, saves token to `.auth/google-token.json` |
+| `scripts/query.py` | Unified CLI wrapper for all external integrations. `calendar` subcommand live; `gmail` stubbed (Week 2); `github` delegates to `gh` CLI |
+
+### `query.py` interface (calendar)
+
+```
+python scripts/query.py calendar today        # today's events as markdown
+python scripts/query.py calendar week         # this week
+python scripts/query.py calendar next         # next single event
+python scripts/query.py calendar upcoming 5   # next N events
+python scripts/query.py calendar range START END
+python scripts/query.py --json calendar today # machine-readable JSON
+```
+
+Output: markdown with time, attendees, location, 30-min prep warning.
+
+### Design decisions
+
+- Unified `query.py` (not per-service scripts) — follows design doc pattern `python query.py {service} {subcommand}`
+- Token stored in `.auth/google-token.json` (gitignored); credentials in `.auth/google-credentials.json` (gitignored)
+- Auto-refreshes expired tokens on every run
+- API keys never appear in stdout or prompts
+- Gmail stubbed at same auth scope — same token covers both Calendar and Gmail when Week 2 wires it
+
+### Hook updated
+
+`session-start.sh` now runs `python scripts/query.py calendar today` if token exists — today's calendar appears in session context automatically.
+
+### setup.sh updated
+
+Section 6 now includes precise step-by-step Google Cloud Console instructions and the test command.
+
+---
+
 ## 2026-05-04 — Day 2 (follow-up): PII removal and content gitignore
 
 **Trigger:** Fork cannot be made private; all personal content must be excluded from git.
