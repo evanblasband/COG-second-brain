@@ -6,6 +6,23 @@ Append new entries at the top. Each entry gets a date and a clear description of
 
 ---
 
+## 2026-05-04 — Day 3 (follow-up): MCP-vs-CLI architecture clarification
+
+**Decision:** Google Calendar and Gmail are already connected as MCPs through claude.ai. No Google Cloud project or OAuth credentials needed for interactive Claude Code sessions.
+
+| Context | Integration method | Auth required |
+|---------|-------------------|---------------|
+| Interactive Claude Code sessions | MCPs (`mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Gmail__*`) | None — already connected |
+| Background agents / heartbeat / cron | Python CLI (`scripts/query.py`) | Google Cloud OAuth (future) |
+
+**Changes:**
+- `session-start.sh` — calendar block updated to instruct Claude to use MCP instead of running the Python script
+- `scripts/query.py` — docstring updated with clear MCP-vs-CLI guidance
+- `templates/identity/MY-INTEGRATIONS.template.md` — split into Active via MCP vs Pending (CLI)
+- `scripts/google_auth.py` remains for when background agents are wired (Week 2+)
+
+---
+
 ## 2026-05-04 — Day 3: Google Calendar Python CLI integration
 
 ### New scripts

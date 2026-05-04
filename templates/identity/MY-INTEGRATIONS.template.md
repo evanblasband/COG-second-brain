@@ -17,12 +17,19 @@ Skills check this file before using any external service. Do not attempt to call
 |-------------|-------------|-------|-------|
 | GitHub | `gh` CLI | | username: [from GITHUB_USER in .env] |
 
-## Pending (not yet set up)
+## Active via MCP (connected through claude.ai — no extra setup)
 
-| Integration | Target setup date | Blocker |
-|-------------|------------------|---------|
-| Google Calendar | | Need OAuth credentials |
-| Gmail | | Depends on Google OAuth; work email may not be active |
+| Integration | MCP tool prefix | Notes |
+|-------------|----------------|-------|
+| Google Calendar | `mcp__claude_ai_Google_Calendar__` | Use in interactive Claude sessions |
+| Gmail | `mcp__claude_ai_Gmail__` | Use in interactive Claude sessions |
+
+## Pending (Python CLI — needed for background agents only)
+
+| Integration | Blocker | Notes |
+|-------------|---------|-------|
+| Google Calendar CLI | Need Google Cloud credentials JSON | Only required for heartbeat/cron — not for interactive sessions |
+| Gmail CLI | Same as above | Week 2 |
 
 ## Disabled
 

@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 """
-query.py — Unified CLI wrapper for all external integrations.
+query.py — Unified CLI wrapper for external integrations.
+Intended for background/autonomous agent contexts where MCPs are unavailable.
 API keys and tokens never appear in output or prompts.
+
+WHEN TO USE THIS vs MCPs
+─────────────────────────
+  Interactive Claude Code sessions → use MCPs (already connected via claude.ai)
+    mcp__claude_ai_Google_Calendar__list_events
+    mcp__claude_ai_Gmail__search_threads
+
+  Background agents / heartbeat / cron / non-Claude processes → use this script
+    python scripts/query.py calendar today
+    (requires: python scripts/google_auth.py run once first)
 
 Usage:
     python scripts/query.py calendar today
@@ -9,15 +20,10 @@ Usage:
     python scripts/query.py calendar next
     python scripts/query.py calendar upcoming 5
     python scripts/query.py calendar range 2026-05-04 2026-05-10
-
     python scripts/query.py gmail unread --limit 10     (Week 2)
     python scripts/query.py github prs --repo NAME      (uses gh CLI)
 
 Output: markdown by default, --json for structured output.
-
-Claude usage pattern:
-    Run this script via Bash tool. Read the markdown output directly.
-    Never pass credentials through Claude's context.
 """
 
 import argparse
