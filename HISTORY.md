@@ -6,6 +6,44 @@ Append new entries at the top. Each entry gets a date and a clear description of
 
 ---
 
+## 2026-05-04 — Day 4: Research pipeline + starter knowledge graph
+
+### New script
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/research.py` | Background research pipeline — URL → fetch → hash check → extract → write note → update manifest |
+
+### CLI
+```
+python scripts/research.py --url URL --category CATEGORY [--subcategory SUB] [--force]
+python scripts/research.py --manifest   # show ingest manifest summary
+```
+
+### Design decisions
+- V1 = structured markdown notes + `graph/ingest_manifest.json` tracking; entity extraction and graph DB are V2
+- Hash-based deduplication: SHA256 of extracted text content — skips re-ingest if unchanged
+- BeautifulSoup for HTML extraction with crude fallback (regex) if not installed
+- Notes written to `04-knowledge/{category}/{slug}.md` with YAML frontmatter
+- Manifest key = URL; `manual:` prefix for hand-written notes
+- `--force` flag overrides hash check for forced refresh
+
+### Starter knowledge notes written (5)
+
+| File | Domain |
+|------|--------|
+| `04-knowledge/competitors/senior-living-tech-landscape.md` | Market overview, vendor landscape |
+| `04-knowledge/technologies/iot-connectivity-protocols.md` | LoRa, BLE, Zigbee, UWB, NB-IoT comparison |
+| `04-knowledge/technologies/privacy-preserving-sensing.md` | mmWave, UWB, PIR, acoustic — non-camera sensing |
+| `04-knowledge/regulations/hipaa-iot-basics.md` | PHI in sensor data, BAA, safeguards, 2025 NPRM |
+| `04-knowledge/technologies/edge-computing-iot.md` | Jetson hardware tiers, deployment patterns, store-and-forward |
+
+### Infrastructure created
+- `graph/` directory + `graph/ingest_manifest.json` — V1 knowledge tracking
+- `requirements.txt` — `beautifulsoup4` uncommented (now active dependency)
+
+---
+
 ## 2026-05-04 — Day 3 (follow-up): MCP-vs-CLI architecture clarification
 
 **Decision:** Google Calendar and Gmail are already connected as MCPs through claude.ai. No Google Cloud project or OAuth credentials needed for interactive Claude Code sessions.

@@ -8,9 +8,9 @@ google-api-python-client>=2.0.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 
-# Future: research pipeline (Week 1, Day 5+)
-# beautifulsoup4>=4.12.0
-# markdownify>=0.11.0
+# Research pipeline (scripts/research.py)
+beautifulsoup4>=4.12.0
+# markdownify>=0.11.0  # optional: convert HTML to markdown (add if needed)
 
 # Future: vector search / hybrid RAG (Week 2+)
 # fastembed>=0.3.0

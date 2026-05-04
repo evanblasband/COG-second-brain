@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "entries": {
+    "manual:senior-living-tech-landscape": {
+      "hash": "manual",
+      "path": "04-knowledge/competitors/senior-living-tech-landscape.md",
+      "category": "competitors",
+      "ingested": "2026-05-04T00:00:00+00:00",
+      "notes": "Hand-written from web research synthesis — Day 4"
+    },
+    "manual:iot-connectivity-protocols": {
+      "hash": "manual",
+      "path": "04-knowledge/technologies/iot-connectivity-protocols.md",
+      "category": "technologies",
+      "ingested": "2026-05-04T00:00:00+00:00",
+      "notes": "Hand-written from web research synthesis — Day 4"
+    },
+    "manual:privacy-preserving-sensing": {
+      "hash": "manual",
+      "path": "04-knowledge/technologies/privacy-preserving-sensing.md",
+      "category": "technologies",
+      "ingested": "2026-05-04T00:00:00+00:00",
+      "notes": "Hand-written from web research synthesis — Day 4"
+    },
+    "manual:hipaa-iot-basics": {
+      "hash": "manual",
+      "path": "04-knowledge/regulations/hipaa-iot-basics.md",
+      "category": "regulations",
+      "ingested": "2026-05-04T00:00:00+00:00",
+      "notes": "Hand-written from web research synthesis — Day 4"
+    },
+    "manual:edge-computing-iot": {
+      "hash": "manual",
+      "path": "04-knowledge/technologies/edge-computing-iot.md",
+      "category": "technologies",
+      "ingested": "2026-05-04T00:00:00+00:00",
+      "notes": "Hand-written from web research synthesis — Day 4"
+    }
+  }
+}
