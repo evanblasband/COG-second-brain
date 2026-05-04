@@ -1,0 +1,17 @@
+# Google integrations (wire in Week 1, Day 3+)
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Future: research pipeline (Week 1, Day 5+)
+# beautifulsoup4>=4.12.0
+# markdownify>=0.11.0
+
+# Future: vector search / hybrid RAG (Week 2+)
+# fastembed>=0.3.0
+# sqlite-utils>=3.35.0

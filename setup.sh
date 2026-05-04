@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# setup.sh — Second Brain new-machine installer
+# Run once on a fresh machine to get the full system operational.
+# Idempotent: safe to run multiple times.
+#
+# Usage: bash setup.sh
+
+set -euo pipefail
+
+VAULT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+NC="\033[0m"
+
+ok()   { echo -e "${GREEN}✓${NC} $1"; }
+warn() { echo -e "${YELLOW}⚠${NC}  $1"; }
+info() { echo -e "  $1"; }
+fail() { echo -e "${RED}✗${NC} $1"; exit 1; }
+section() { echo -e "\n${GREEN}=== $1 ===${NC}"; }
+
+echo ""
+echo "Second Brain — new machine setup"
+echo "Vault: $VAULT_DIR"
+echo ""
+
+# ─── 1. DETECT OS ────────────────────────────────────────────────────────────
+section "Detecting OS"
+OS="unknown"
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  if grep -qi microsoft /proc/version 2>/dev/null; then
+    OS="wsl"
+    ok "WSL (Ubuntu/Debian)"
+  else
+    OS="linux"
+    ok "Linux"
+  fi
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  OS="mac"
+  ok "macOS"
+else
+  warn "Unknown OS: $OSTYPE — proceeding with Linux assumptions"
+fi
+
+# ─── 2. SYSTEM DEPENDENCIES ──────────────────────────────────────────────────
+section "System dependencies"
+
+check_cmd() {
+  if command -v "$1" &>/dev/null; then
+    ok "$1 already installed ($(command -v "$1"))"
+    return 0
+  fi
+  return 1
+}
+
+# git
+check_cmd git || {
+  warn "git not found"
+  if [[ "$OS" == "mac" ]]; then
+    info "Run: brew install git"
+  else
+    info "Run: sudo apt-get install -y git"
+  fi
+  warn "Install git and re-run setup.sh"
+  exit 1
+}
+
+# python3
+if check_cmd python3; then
+  PY_VERSION=$(python3 --version 2>&1)
+  info "Version: $PY_VERSION"
+else
+  warn "python3 not found"
+  if [[ "$OS" == "mac" ]]; then
+    info "Run: brew install python@3.12"
+  else
+    info "Run: sudo apt-get install -y python3 python3-pip python3-venv"
+  fi
+  warn "Install Python 3.10+ and re-run setup.sh"
+  exit 1
+fi
+
+# tmux (optional but recommended for multi-agent sessions)
+check_cmd tmux || {
+  warn "tmux not installed (optional — needed for multi-agent sessions)"
+  if [[ "$OS" == "mac" ]]; then
+    info "Install with: brew install tmux"
+  else
+    info "Install with: sudo apt-get install -y tmux"
+  fi
+}
+
+# gh CLI
+if check_cmd gh; then
+  true
+elif [[ -f "$HOME/bin/gh" ]]; then
+  ok "gh found at ~/bin/gh"
+  export PATH="$HOME/bin:$PATH"
+else
+  warn "gh CLI not installed"
+  if [[ "$OS" == "mac" ]]; then
+    info "Install with: brew install gh"
+  else
+    info "Install without sudo:"
+    info "  mkdir -p ~/bin"
+    info "  curl -sL https://github.com/cli/cli/releases/download/v2.71.0/gh_2.71.0_linux_amd64.tar.gz | tar -xz -C /tmp"
+    info "  cp /tmp/gh_2.71.0_linux_amd64/bin/gh ~/bin/gh"
+    info "  echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+  fi
+  warn "Install gh CLI and re-run setup.sh"
+fi
+
+# Claude Code
+if check_cmd claude; then
+  true
+else
+  warn "Claude Code (claude CLI) not installed"
+  info "Install with: npm install -g @anthropic-ai/claude-code"
+  info "Or via: https://claude.ai/code"
+  warn "Install Claude Code and re-run setup.sh"
+fi
+
+# Obsidian (GUI app — cannot auto-install on all platforms)
+if [[ "$OS" == "mac" ]]; then
+  if [[ -d "/Applications/Obsidian.app" ]]; then
+    ok "Obsidian installed"
+  else
+    warn "Obsidian not installed"
+    info "Install with: brew install --cask obsidian"
+    info "Or download from: https://obsidian.md/download"
+  fi
+else
+  warn "Obsidian: install manually from https://obsidian.md/download"
+  info "After installing, open vault at: $VAULT_DIR"
+fi
+
+# ─── 3. PYTHON ENVIRONMENT ───────────────────────────────────────────────────
+section "Python virtual environment"
+
+VENV_DIR="$VAULT_DIR/.venv"
+if [[ -d "$VENV_DIR" ]]; then
+  ok "Virtual environment already exists at .venv"
+else
+  python3 -m venv "$VENV_DIR"
+  ok "Created .venv"
+fi
+
+# Activate and install
+# shellcheck disable=SC1091
+source "$VENV_DIR/bin/activate"
+pip install --quiet --upgrade pip
+pip install --quiet -r "$VAULT_DIR/requirements.txt"
+ok "Python dependencies installed from requirements.txt"
+
+# ─── 4. ENVIRONMENT FILE ─────────────────────────────────────────────────────
+section "Environment file"
+
+ENV_FILE="$VAULT_DIR/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  ok ".env already exists — skipping"
+else
+  cp "$VAULT_DIR/.env.example" "$ENV_FILE"
+  ok "Created .env from .env.example"
+  warn "Open .env and fill in your API keys before using integrations"
+fi
+
+# Create .auth dir for OAuth tokens
+mkdir -p "$VAULT_DIR/.auth"
+ok ".auth/ directory ready for OAuth tokens"
+
+# ─── 4b. IDENTITY FILES ──────────────────────────────────────────────────────
+section "Identity files"
+
+IDENTITY_TEMPLATES="$VAULT_DIR/templates/identity"
+IDENTITY_FILES=(
+  "SOUL.md:$IDENTITY_TEMPLATES/SOUL.template.md"
+  "USER.md:$IDENTITY_TEMPLATES/USER.template.md"
+  "MEMORY.md:$IDENTITY_TEMPLATES/MEMORY.template.md"
+  "OPEN_LOOPS.md:$IDENTITY_TEMPLATES/OPEN_LOOPS.template.md"
+  "00-inbox/MY-PROFILE.md:$IDENTITY_TEMPLATES/MY-PROFILE.template.md"
+  "00-inbox/MY-INTERESTS.md:$IDENTITY_TEMPLATES/MY-INTERESTS.template.md"
+  "00-inbox/MY-INTEGRATIONS.md:$IDENTITY_TEMPLATES/MY-INTEGRATIONS.template.md"
+)
+
+for entry in "${IDENTITY_FILES[@]}"; do
+  dest="${entry%%:*}"
+  src="${entry##*:}"
+  dest_path="$VAULT_DIR/$dest"
+  if [[ -f "$dest_path" ]]; then
+    ok "$dest already exists"
+  else
+    cp "$src" "$dest_path"
+    warn "$dest created from template — fill in your personal details"
+  fi
+done
+
+echo ""
+info "Identity files are gitignored — they exist only on this machine."
+info "Fill them in with your real details. They will never be pushed to git."
+
+# ─── 5. GITHUB AUTH ──────────────────────────────────────────────────────────
+section "GitHub authentication"
+
+if command -v gh &>/dev/null; then
+  if gh auth status &>/dev/null 2>&1; then
+    ok "Already authenticated with GitHub ($(gh api user --jq .login 2>/dev/null || echo 'unknown'))"
+  else
+    warn "Not logged in to GitHub"
+    info "Run: gh auth login"
+    info "Choose: GitHub.com → HTTPS → Login with a web browser"
+  fi
+else
+  warn "gh CLI not available — skip GitHub auth for now"
+fi
+
+# ─── 6. GOOGLE AUTH ──────────────────────────────────────────────────────────
+section "Google OAuth (Calendar + Gmail)"
+
+TOKEN_PATH="$VAULT_DIR/.auth/google-token.json"
+if [[ -f "$TOKEN_PATH" ]]; then
+  ok "Google OAuth token found at .auth/google-token.json"
+else
+  warn "Google not authenticated yet"
+  info "Steps to set up Google OAuth:"
+  info "  1. Go to https://console.cloud.google.com/"
+  info "  2. Create a project, enable Calendar API and Gmail API"
+  info "  3. Create OAuth 2.0 credentials (Desktop app)"
+  info "  4. Download credentials JSON → save as .auth/google-credentials.json"
+  info "  5. Run: python scripts/google_auth.py"
+  info ""
+  info "Set PERSONAL_EMAIL and WORK_EMAIL in .env before running OAuth."
+  info "If your work email is not yet active, authenticate with personal email"
+  info "first, then re-authorize once the work account is provisioned."
+fi
+
+# ─── 7. VAULT STRUCTURE CHECK ────────────────────────────────────────────────
+section "Vault structure check"
+
+REQUIRED_DIRS=(
+  "00-inbox" "01-daily" "02-people" "03-projects"
+  "04-knowledge/regulations" "04-knowledge/technologies" "04-knowledge/competitors"
+  "05-decisions" "06-mistakes" "07-resources"
+  "AI/sessions" "AI/research" "AI/evaluations" "AI/drafts"
+  "templates" ".claude/skills" ".claude/agents"
+)
+REQUIRED_FILES=(
+  "SOUL.md" "USER.md" "MEMORY.md" "OPEN_LOOPS.md" "CLAUDE.md"
+  "requirements.txt" ".env.example"
+  "templates/daily-note.md" "templates/person.md"
+  "templates/project-brief.md" "templates/meeting-note.md"
+)
+
+all_ok=true
+for dir in "${REQUIRED_DIRS[@]}"; do
+  if [[ -d "$VAULT_DIR/$dir" ]]; then
+    ok "Dir: $dir"
+  else
+    fail "Missing dir: $dir"
+    all_ok=false
+  fi
+done
+for file in "${REQUIRED_FILES[@]}"; do
+  if [[ -f "$VAULT_DIR/$file" ]]; then
+    ok "File: $file"
+  else
+    warn "Missing file: $file"
+    all_ok=false
+  fi
+done
+
+# ─── 8. OBSIDIAN VAULT OPEN ──────────────────────────────────────────────────
+section "Open vault in Obsidian"
+
+if [[ "$OS" == "mac" ]] && [[ -d "/Applications/Obsidian.app" ]]; then
+  info "Opening vault in Obsidian..."
+  open -a Obsidian "$VAULT_DIR"
+  ok "Vault opened"
+else
+  info "Open Obsidian manually and add vault at: $VAULT_DIR"
+  info "In Obsidian: Settings → Community Plugins → Enable: Dataview, Templater, Git, Canvas, Tasks"
+fi
+
+# ─── 9. MANUAL STEPS REMINDER ────────────────────────────────────────────────
+section "Manual steps still required"
+
+echo ""
+warn "The following cannot be automated — complete these manually:"
+echo ""
+echo "  1. Fill in .env with ANTHROPIC_API_KEY and Google credentials"
+echo "  2. Run: gh auth login  (if not already done)"
+echo "  3. Set up Google OAuth (see steps above in section 6)"
+echo "  4. WORK_EMAIL (.env) — if not yet active, set it when provisioned"
+echo "     and re-run Google OAuth to add the work account."
+echo "  5. Install Obsidian plugins: Dataview, Templater, Obsidian Git,"
+echo "     Canvas, Tasks, Excalidraw"
+echo "  6. In Obsidian Templater settings, set template folder to: templates/"
+echo "  7. On day one: request Foundry access and pull internal Sage docs"
+echo "     into 04-knowledge/ via the research agent"
+echo ""
+
+ok "Setup complete. Run 'claude' in this directory to start a session."

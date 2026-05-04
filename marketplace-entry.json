@@ -1,0 +1,27 @@
+{
+  "name": "cog-second-brain",
+  "source": "https://github.com/huytieu/COG-second-brain",
+  "owner": {
+    "name": "Huy Tieu",
+    "email": "tqhuy1991@gmail.com",
+    "url": "https://github.com/huytieu"
+  },
+  "description": "Self-evolving second brain with 17 AI skills, 6 worker agents, and people CRM. Inspired by Garry Tan's gstack and gbrain. Works with Claude Code, Cursor, Kiro, Gemini CLI, Codex.",
+  "version": "3.5.0",
+  "keywords": [
+    "second-brain",
+    "garry-tan",
+    "gstack",
+    "gbrain",
+    "ai-agents",
+    "obsidian",
+    "claude-code",
+    "cursor",
+    "worker-agents",
+    "people-crm",
+    "knowledge-management",
+    "specialist-sessions"
+  ],
+  "category": "productivity",
+  "homepage": "https://github.com/huytieu/COG-second-brain"
+}

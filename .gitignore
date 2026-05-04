@@ -1,0 +1,85 @@
+# Obsidian
+.obsidian/workspace*
+.obsidian/cache/
+.obsidian/plugins/
+.obsidian/community-plugins.json
+
+# Trash
+.trash/
+*.tmp
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# ─── Secrets and auth tokens — NEVER commit ──────────────────────────────────
+.env
+.auth/
+*.token
+*credentials*.json
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# ─── Identity files — personal, stay local only ──────────────────────────────
+# Create these on each machine from templates/identity/ via setup.sh
+SOUL.md
+USER.md
+MEMORY.md
+OPEN_LOOPS.md
+
+# ─── Vault content — all personal, never committed ───────────────────────────
+# Framework (skills, agents, hooks, templates) IS committed.
+# Content (notes, logs, knowledge, people, projects) is NOT.
+
+# 00-inbox personal config (create from templates/identity/ via setup.sh)
+00-inbox/MY-PROFILE.md
+00-inbox/MY-INTERESTS.md
+00-inbox/MY-INTEGRATIONS.md
+
+# Daily notes
+01-daily/briefs/*.md
+01-daily/checkins/*.md
+
+# People CRM
+02-people/*.md
+!02-people/README.md
+
+# Projects
+03-projects/**
+!03-projects/.gitkeep
+
+# Knowledge base
+04-knowledge/**/*.md
+!04-knowledge/**/.gitkeep
+
+# Decisions, mistakes, resources
+05-decisions/*.md
+06-mistakes/*.md
+07-resources/*.md
+
+# AI agent outputs (keep directory structure via .gitkeep, ignore content)
+AI/sessions/*.md
+AI/sessions/*.jsonl
+AI/research/*.md
+AI/evaluations/*.md
+AI/drafts/*.md
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+
+# ─── Backup files ────────────────────────────────────────────────────────────
+*.bak
+*~
+*.backup.*
+
+# Submission and marketplace tracking
+.github/SUBMISSION-CHECKLIST.md
+.github/SUBMISSION-TEMPLATES.md
+.github/MARKETPLACE.md
