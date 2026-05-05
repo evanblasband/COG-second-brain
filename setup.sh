@@ -238,6 +238,39 @@ else
   info "first, then re-authorize once the work account is provisioned."
 fi
 
+# ─── 6b. DOCKER SANDBOX ──────────────────────────────────────────────────────
+section "Docker sandbox"
+
+if command -v docker &>/dev/null; then
+  if docker compose version &>/dev/null 2>&1; then
+    ok "Docker + Compose available"
+    if docker image inspect brain-sandbox &>/dev/null 2>&1; then
+      ok "brain-sandbox image already built"
+    else
+      info "Building brain-sandbox image..."
+      docker compose build --quiet
+      ok "brain-sandbox image built"
+    fi
+    info "Run research pipeline in sandbox:"
+    info "  docker compose run --rm brain-sandbox scripts/research.py \\"
+    info "    --url URL --category technologies"
+  else
+    warn "Docker found but 'docker compose' not available — install Docker Desktop or Compose plugin"
+  fi
+else
+  warn "Docker not installed — sandbox runs will fall back to local .venv"
+  if [[ "$OS" == "mac" ]]; then
+    info "Install: brew install --cask docker"
+  elif [[ "$OS" == "wsl" ]]; then
+    info "Install Docker Desktop for Windows with WSL2 integration enabled"
+    info "  https://docs.docker.com/desktop/windows/install/"
+  else
+    info "Install: sudo apt-get install -y docker.io docker-compose-plugin"
+    info "         sudo usermod -aG docker \$USER && newgrp docker"
+  fi
+  info "After installing Docker, re-run setup.sh or: docker compose build"
+fi
+
 # ─── 7. VAULT STRUCTURE CHECK ────────────────────────────────────────────────
 section "Vault structure check"
 
@@ -301,6 +334,7 @@ echo "     Canvas, Tasks, Excalidraw"
 echo "  6. In Obsidian Templater settings, set template folder to: templates/"
 echo "  7. On day one: request Foundry access and pull internal Sage docs"
 echo "     into 04-knowledge/ via the research agent"
+echo "  8. Launch multi-pane workspace: bash scripts/tmux-brain.sh"
 echo ""
 
 ok "Setup complete. Run 'claude' in this directory to start a session."

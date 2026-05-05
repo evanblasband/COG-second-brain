@@ -1,0 +1,37 @@
+# Secrets — never include in build context
+.env
+.auth/
+*.token
+*credentials*.json
+
+# Python venv (large, not needed — deps installed inside image)
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Vault content (mounted at runtime, not baked into image)
+00-inbox/
+01-daily/
+02-people/
+03-projects/
+04-knowledge/
+05-decisions/
+06-mistakes/
+07-resources/
+AI/
+graph/
+templates/
+docs/
+
+# Obsidian state
+.obsidian/
+.trash/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore

@@ -1,0 +1,25 @@
+services:
+  brain-sandbox:
+    build: .
+    container_name: brain-sandbox
+    volumes:
+      # Mount entire vault so scripts can read/write knowledge files.
+      # .auth/ and .env are on the host — container sees them via volume.
+      - .:/brain
+    env_file:
+      - .env
+    working_dir: /brain
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Network access needed for research.py web fetches.
+    # Remove network_mode and add network: none to go fully air-gapped.
+    network_mode: bridge
+
+# Usage:
+#   Build:   docker compose build
+#   Ingest:  docker compose run --rm brain-sandbox scripts/research.py \
+#              --url https://example.com --category technologies
+#   Manifest: docker compose run --rm brain-sandbox scripts/research.py --manifest
+#   Shell:   docker compose run --rm --entrypoint bash brain-sandbox
