@@ -12,6 +12,11 @@
 .DS_Store
 Thumbs.db
 
+# ─── Personal data files — NEVER commit ─────────────────────────────────────
+# Org chart, contact lists, or any data file containing people information.
+# Use scripts/generate_people.py --data <path> to point to these files locally.
+data/
+
 # ─── Secrets and auth tokens — NEVER commit ──────────────────────────────────
 .env
 .auth/
