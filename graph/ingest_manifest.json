@@ -35,6 +35,27 @@
       "category": "technologies",
       "ingested": "2026-05-04T00:00:00+00:00",
       "notes": "Hand-written from web research synthesis — Day 4"
+    },
+    "manual:fcc-part-15-iot": {
+      "hash": "manual",
+      "path": "04-knowledge/regulations/fcc-part-15-iot.md",
+      "category": "regulations",
+      "ingested": "2026-05-05T00:00:00+00:00",
+      "notes": "Hand-written from regulatory knowledge synthesis — Day 5"
+    },
+    "manual:sage-health-public": {
+      "hash": "manual",
+      "path": "04-knowledge/competitors/sage-health-public.md",
+      "category": "competitors",
+      "ingested": "2026-05-05T00:00:00+00:00",
+      "notes": "Hand-written from public sources only — to be supplemented with internal docs Day 1"
+    },
+    "manual:senior-care-academic-institutions": {
+      "hash": "manual",
+      "path": "04-knowledge/consolidated/senior-care-academic-institutions.md",
+      "category": "consolidated",
+      "ingested": "2026-05-05T00:00:00+00:00",
+      "notes": "Hand-written from academic research knowledge — Day 5"
     }
   }
 }
