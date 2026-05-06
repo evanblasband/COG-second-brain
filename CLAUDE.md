@@ -137,11 +137,17 @@ See `AGENTS.md` for full worker agent specifications.
 ## Human-in-the-Loop Checkpoints
 
 Pause and confirm before:
-- Pushing to remote git
 - Sending any external communication (email, Slack, calendar invite)
 - Making any API call that writes data to external systems
 - Deleting any file (prefer archiving)
 - Executing any shell command with side effects on shared systems
+
+### Git rules — strict
+
+- **Never commit.** Staging (`git add`) is allowed; `git commit` is not. The user reviews staged changes and commits manually.
+- **Never push** to any branch unless the user explicitly says "push this."
+- **Never force-push, reset, or rebase** under any circumstances without explicit instruction.
+- If you have changes ready to commit, stage them, then tell the user what was staged and why.
 
 ---
 

@@ -1,0 +1,48 @@
+# config.yaml — system configuration
+# No secrets here. Safe to commit. Actual keys go in .env (gitignored).
+
+vault_path: "."          # relative to repo root; override with $VAULT_PATH env var
+graph_path: "./graph"
+
+# ── Model tiers ────────────────────────────────────────────────────────────────
+models:
+  extraction: "claude-haiku-4-5-20251001"   # entity extraction, classification, tagging
+  default: "claude-sonnet-4-6"              # reasoning, synthesis, most agent work
+  heavy: "claude-opus-4-7"                  # complex multi-step, high-stakes deliverables
+
+# ── Cost limits ────────────────────────────────────────────────────────────────
+cost_limits:
+  per_session_usd: 2.00
+  per_ingest_batch_usd: 5.00
+  monthly_budget_usd: 50.00
+  ingest_auto_approve_usd: 0.10   # ingest.py prompts Y/N above this per file
+
+# ── Ingest pipeline ────────────────────────────────────────────────────────────
+ingest:
+  chunk_size_chars: 4000
+  chunk_overlap_chars: 200
+  max_file_size_chars: 150000
+  staleness_days: 30              # flag nodes not re-validated within this window
+
+  # Approximate Haiku pricing (update if rates change)
+  haiku_input_cost_per_mtok: 0.80
+  haiku_output_cost_per_mtok: 4.00
+
+# ── Heartbeat ──────────────────────────────────────────────────────────────────
+heartbeat:
+  interval_minutes: 30
+  model: extraction
+  max_cost_per_run_usd: 0.10
+
+# ── Knowledge base maintenance ─────────────────────────────────────────────────
+kb_maintenance:
+  day: monday
+  hour: 8
+  staleness_threshold: 0.7        # flag for review; 0.9+ blocks use in deliverables
+
+# ── Context janitor ────────────────────────────────────────────────────────────
+context_janitor:
+  daily_run: true
+  heavy_run_day: friday
+  archive_after_days: 14
+  rolling_summary_every: 5        # summarize every N unsummarized session docs

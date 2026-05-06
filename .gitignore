@@ -23,6 +23,12 @@ data/
 *.token
 *credentials*.json
 
+# ─── Knowledge graph — never committed ───────────────────────────────────────
+# Both files will reference or contain proprietary data after day-one ingest.
+# Rebuild on a new machine with: python3 scripts/ingest.py 04-knowledge/ --batch --yes
+graph/graph.json
+graph/ingest_manifest.json
+
 # Python virtual environment
 .venv/
 __pycache__/
