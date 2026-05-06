@@ -72,11 +72,12 @@ OPEN_LOOPS.md
 07-resources/*.md
 
 # AI agent outputs (keep directory structure via .gitkeep, ignore content)
-AI/sessions/*.md
-AI/sessions/*.jsonl
-AI/research/*.md
-AI/evaluations/*.md
-AI/drafts/*.md
+# Use ** to match any depth of subdirectories (e.g. AI/research/sage-interviews/)
+AI/sessions/**
+AI/research/**
+AI/evaluations/**
+AI/drafts/**
+!AI/**/.gitkeep
 
 # ─── IDE ─────────────────────────────────────────────────────────────────────
 .vscode/
