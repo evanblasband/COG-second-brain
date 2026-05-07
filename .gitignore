@@ -28,6 +28,7 @@ data/
 # Rebuild on a new machine with: python3 scripts/ingest.py 04-knowledge/ --batch --yes
 graph/graph.json
 graph/ingest_manifest.json
+graph/drive-sync-state.json
 
 # Python virtual environment
 .venv/
@@ -49,6 +50,7 @@ OPEN_LOOPS.md
 00-inbox/MY-PROFILE.md
 00-inbox/MY-INTERESTS.md
 00-inbox/MY-INTEGRATIONS.md
+00-inbox/drive-sync.json
 
 # Daily notes
 01-daily/briefs/*.md

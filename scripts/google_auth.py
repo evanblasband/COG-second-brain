@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-google_auth.py — One-time Google OAuth setup for Calendar + Gmail.
+google_auth.py — One-time Google OAuth setup for Calendar + Gmail + Drive.
 
 Usage:
     python scripts/google_auth.py
@@ -8,7 +8,7 @@ Usage:
 Prerequisites:
     1. Go to https://console.cloud.google.com/
     2. Create a project (or use an existing one)
-    3. Enable: Google Calendar API, Gmail API
+    3. Enable: Google Calendar API, Gmail API, Google Drive API
     4. Go to APIs & Services > Credentials
     5. Create OAuth 2.0 Client ID > Desktop application
     6. Download the JSON file
@@ -29,6 +29,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/drive.readonly",
 ]
 
 

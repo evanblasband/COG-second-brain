@@ -20,7 +20,10 @@ Usage:
     python scripts/query.py calendar next
     python scripts/query.py calendar upcoming 5
     python scripts/query.py calendar range 2026-05-04 2026-05-10
-    python scripts/query.py gmail unread --limit 10     (Week 2)
+    python scripts/query.py gmail unread --limit 10
+    python scripts/query.py drive list [--limit N] [--folder FOLDER_ID]
+    python scripts/query.py drive search "query string"
+    python scripts/query.py drive download FILE_ID [--output /path/to/file.txt]
     python scripts/query.py github prs --repo NAME      (uses gh CLI)
 
 Output: markdown by default, --json for structured output.
@@ -51,6 +54,7 @@ def get_google_creds():
         "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/drive.readonly",
     ]
 
     if not TOKEN_FILE.exists():
@@ -386,6 +390,166 @@ def _slack_format(items: list, title: str, as_json: bool):
     print("\n".join(lines))
 
 
+# ─── Google Drive ─────────────────────────────────────────────────────────────
+
+# Google Workspace types that must be exported (not downloaded directly)
+_DRIVE_EXPORT_MIMES = {
+    "application/vnd.google-apps.document": "text/plain",
+    "application/vnd.google-apps.spreadsheet": "text/csv",
+    "application/vnd.google-apps.presentation": "text/plain",
+}
+
+_DRIVE_TYPE_LABELS = {
+    "application/vnd.google-apps.document": "Google Doc",
+    "application/vnd.google-apps.spreadsheet": "Google Sheet",
+    "application/vnd.google-apps.presentation": "Google Slides",
+    "application/pdf": "PDF",
+    "text/plain": "Text",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+}
+
+
+def drive_cmd(args):
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        _die("google-api-python-client not installed. Run: pip install -r requirements.txt")
+
+    creds = get_google_creds()
+    service = build("drive", "v3", credentials=creds)
+
+    sub = getattr(args, "sub", "list")
+    if sub == "list":
+        _drive_list(service, args)
+    elif sub == "search":
+        _drive_search(service, args)
+    elif sub == "download":
+        _drive_download(service, args)
+    else:
+        _die(f"Unknown drive subcommand: {sub}")
+
+
+def _drive_list(service, args):
+    folder = getattr(args, "folder", None)
+    limit = getattr(args, "limit", 20)
+
+    q = f"'{folder}' in parents and trashed=false" if folder else "trashed=false"
+    result = service.files().list(
+        q=q,
+        pageSize=limit,
+        orderBy="modifiedTime desc",
+        fields="files(id,name,mimeType,modifiedTime,webViewLink)",
+    ).execute()
+    files = result.get("files", [])
+
+    if args.json:
+        print(json.dumps(files, indent=2))
+        return
+
+    if not files:
+        print("## Google Drive\n\n_No files found._\n")
+        return
+
+    lines = ["## Google Drive — Recent Files\n"]
+    for f in files:
+        name = f.get("name", "")
+        fid = f.get("id", "")
+        mime = f.get("mimeType", "")
+        modified = f.get("modifiedTime", "")[:10]
+        link = f.get("webViewLink", "")
+        type_label = _DRIVE_TYPE_LABELS.get(mime, mime.split("/")[-1])
+        lines.append(f"### {name}")
+        lines.append(f"- **ID:** `{fid}`")
+        lines.append(f"- **Type:** {type_label}")
+        lines.append(f"- **Modified:** {modified}")
+        if link:
+            lines.append(f"- **Link:** {link}")
+        lines.append("")
+    print("\n".join(lines))
+
+
+def _drive_search(service, args):
+    query = getattr(args, "query", "")
+    limit = getattr(args, "limit", 20)
+
+    # Escape single quotes in user query
+    safe_query = query.replace("'", "\\'")
+    q = f"name contains '{safe_query}' and trashed=false"
+    result = service.files().list(
+        q=q,
+        pageSize=limit,
+        orderBy="modifiedTime desc",
+        fields="files(id,name,mimeType,modifiedTime,webViewLink)",
+    ).execute()
+    files = result.get("files", [])
+
+    if args.json:
+        print(json.dumps(files, indent=2))
+        return
+
+    if not files:
+        print(f"## Drive Search: '{query}'\n\n_No files found._\n")
+        return
+
+    lines = [f"## Drive Search: '{query}'\n"]
+    for f in files:
+        name = f.get("name", "")
+        fid = f.get("id", "")
+        modified = f.get("modifiedTime", "")[:10]
+        link = f.get("webViewLink", "")
+        lines.append(f"- **{name}**")
+        lines.append(f"  ID: `{fid}` | Modified: {modified}")
+        if link:
+            lines.append(f"  {link}")
+        lines.append("")
+    print("\n".join(lines))
+
+
+def _drive_download(service, args):
+    file_id = args.file_id
+    output = getattr(args, "output", None)
+
+    meta = service.files().get(
+        fileId=file_id,
+        fields="id,name,mimeType",
+    ).execute()
+
+    name = meta.get("name", file_id)
+    mime = meta.get("mimeType", "")
+    export_mime = _DRIVE_EXPORT_MIMES.get(mime)
+
+    if export_mime:
+        # Google Workspace file — export as text
+        content = service.files().export(
+            fileId=file_id,
+            mimeType=export_mime,
+        ).execute()
+        text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+    else:
+        # Binary or plain file — download directly
+        import io
+        from googleapiclient.http import MediaIoBaseDownload
+        buf = io.BytesIO()
+        req = service.files().get_media(fileId=file_id)
+        downloader = MediaIoBaseDownload(buf, req)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        text = buf.getvalue().decode("utf-8", errors="replace")
+
+    if not output:
+        safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
+        output = f"/tmp/{safe_name}.txt"
+
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    print(f"Downloaded: {name}")
+    print(f"Saved to:   {output}")
+    print(f"Ingest via: /ingest {output}")
+
+
 # ─── GitHub (delegates to gh CLI) ─────────────────────────────────────────────
 
 def github_cmd(args):
@@ -446,6 +610,22 @@ def build_parser():
     sl.add_argument("--channel", help="Channel ID or name (for 'channel' subcommand)")
     sl.add_argument("--limit", type=int, default=20)
 
+    # drive
+    dr = sub.add_parser("drive", help="Google Drive queries")
+    dr_sub = dr.add_subparsers(dest="sub", required=True)
+
+    dr_list = dr_sub.add_parser("list", help="List recent Drive files")
+    dr_list.add_argument("--folder", help="Folder ID to list (default: all files)")
+    dr_list.add_argument("--limit", type=int, default=20)
+
+    dr_search = dr_sub.add_parser("search", help="Search Drive files by name")
+    dr_search.add_argument("query", help="Search string")
+    dr_search.add_argument("--limit", type=int, default=20)
+
+    dr_dl = dr_sub.add_parser("download", help="Download a Drive file for ingestion")
+    dr_dl.add_argument("file_id", help="Drive file ID (from 'list' or 'search' output)")
+    dr_dl.add_argument("--output", help="Local path to save to (default: /tmp/<name>.txt)")
+
     # github
     gh = sub.add_parser("github", aliases=["gh"], help="GitHub queries (via gh CLI)")
     gh.add_argument("sub", choices=["prs", "issues"])
@@ -467,6 +647,8 @@ def main():
         gmail_cmd(args)
     elif service == "slack":
         slack_cmd(args)
+    elif service == "drive":
+        drive_cmd(args)
     elif service in ("github", "gh"):
         github_cmd(args)
     else:
