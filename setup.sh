@@ -337,4 +337,17 @@ echo "     into 04-knowledge/ via the research agent"
 echo "  8. Launch multi-pane workspace: bash scripts/tmux-brain.sh"
 echo ""
 
+# ─── 10. CRON JOBS (optional) ────────────────────────────────────────────────
+section "Background agent cron jobs (optional)"
+
+info "To enable background agents, add these to your crontab (crontab -e):"
+echo ""
+echo "  # Heartbeat — checks calendar/email/Slack every 30 min"
+echo "  */30 * * * * cd $VAULT_DIR && $VENV_DIR/bin/python scripts/heartbeat.py >> /tmp/heartbeat.log 2>&1"
+echo ""
+echo "  # Janitor — archives old session logs every Friday at 5pm"
+echo "  0 17 * * 5 cd $VAULT_DIR && $VENV_DIR/bin/python scripts/janitor.py --archive >> /tmp/janitor.log 2>&1"
+echo ""
+info "These are optional — the system works without them. Set up after Google OAuth is complete."
+
 ok "Setup complete. Run 'claude' in this directory to start a session."

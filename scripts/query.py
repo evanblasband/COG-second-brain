@@ -229,12 +229,161 @@ def _format_calendar_md(events: list, period: str) -> str:
     return "\n".join(lines)
 
 
-# ─── Gmail (stub — Week 2) ────────────────────────────────────────────────────
+# ─── Gmail ────────────────────────────────────────────────────────────────────
 
 def gmail_cmd(args):
-    print("## Gmail\n")
-    print("_Gmail integration coming Week 2. Run: python scripts/google_auth.py first._")
-    print("\nRequired scope already included in Google token if auth was run with current scopes.")
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        _die("google-api-python-client not installed. Run: pip install -r requirements.txt")
+
+    creds = get_google_creds()
+    service = build("gmail", "v1", credentials=creds)
+
+    sub = getattr(args, "sub", "unread")
+    limit = getattr(args, "limit", 10)
+
+    if sub == "unread":
+        _gmail_unread(service, limit, args.json)
+    elif sub == "search":
+        query = getattr(args, "query", "")
+        _gmail_search(service, query, limit, args.json)
+    else:
+        _die(f"Unknown gmail subcommand: {sub}")
+
+
+def _gmail_unread(service, limit: int, as_json: bool):
+    result = service.users().messages().list(
+        userId="me", q="is:unread", maxResults=limit
+    ).execute()
+    messages = result.get("messages", [])
+    _gmail_format(service, messages, "Unread Messages", as_json)
+
+
+def _gmail_search(service, query: str, limit: int, as_json: bool):
+    result = service.users().messages().list(
+        userId="me", q=query, maxResults=limit
+    ).execute()
+    messages = result.get("messages", [])
+    _gmail_format(service, messages, f'Search: "{query}"', as_json)
+
+
+def _gmail_format(service, messages: list, title: str, as_json: bool):
+    if not messages:
+        print(f"## Gmail — {title}\n\n_No messages found._\n")
+        return
+
+    items = []
+    for msg in messages:
+        detail = service.users().messages().get(
+            userId="me", id=msg["id"], format="metadata",
+            metadataHeaders=["From", "Subject", "Date"]
+        ).execute()
+        headers = {h["name"]: h["value"] for h in detail.get("payload", {}).get("headers", [])}
+        items.append({
+            "id": msg["id"],
+            "from": headers.get("From", ""),
+            "subject": headers.get("Subject", "(no subject)"),
+            "date": headers.get("Date", ""),
+            "snippet": detail.get("snippet", ""),
+        })
+
+    if as_json:
+        print(json.dumps(items, indent=2))
+        return
+
+    lines = [f"## Gmail — {title}\n"]
+    for item in items:
+        lines.append(f"### {item['subject']}")
+        lines.append(f"- **From:** {item['from']}")
+        lines.append(f"- **Date:** {item['date']}")
+        if item["snippet"]:
+            lines.append(f"- **Preview:** {item['snippet'][:200]}")
+        lines.append("")
+    print("\n".join(lines))
+
+
+# ─── Slack ────────────────────────────────────────────────────────────────────
+
+def slack_cmd(args):
+    token = os.getenv("SLACK_BOT_TOKEN")
+    if not token:
+        _die(
+            "SLACK_BOT_TOKEN not set in .env\n"
+            "Add: SLACK_BOT_TOKEN=xoxb-... to your .env file\n"
+            "Slack app needs scopes: channels:history, im:history, users:read"
+        )
+
+    try:
+        import urllib.request
+        import urllib.parse
+    except ImportError:
+        _die("urllib not available (should be in stdlib)")
+
+    sub = getattr(args, "sub", "mentions")
+    limit = getattr(args, "limit", 20)
+
+    if sub == "mentions":
+        _slack_search(token, f"<@{_slack_my_id(token)}>", limit, args.json)
+    elif sub == "search":
+        query = getattr(args, "query", "")
+        _slack_search(token, query, limit, args.json)
+    elif sub == "channel":
+        channel = getattr(args, "channel", "")
+        if not channel:
+            _die("Specify --channel CHANNEL_ID_OR_NAME")
+        _slack_channel(token, channel, limit, args.json)
+    else:
+        _die(f"Unknown slack subcommand: {sub}")
+
+
+def _slack_api(token: str, endpoint: str, params: dict) -> dict:
+    import urllib.request, urllib.parse
+    base = f"https://slack.com/api/{endpoint}"
+    query = urllib.parse.urlencode(params)
+    url = f"{base}?{query}"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    if not data.get("ok"):
+        _die(f"Slack API error on {endpoint}: {data.get('error', 'unknown')}")
+    return data
+
+
+def _slack_my_id(token: str) -> str:
+    data = _slack_api(token, "auth.test", {})
+    return data.get("user_id", "")
+
+
+def _slack_search(token: str, query: str, limit: int, as_json: bool):
+    data = _slack_api(token, "search.messages", {"query": query, "count": limit})
+    matches = data.get("messages", {}).get("matches", [])
+    _slack_format(matches, f'Slack Search: "{query}"', as_json)
+
+
+def _slack_channel(token: str, channel: str, limit: int, as_json: bool):
+    data = _slack_api(token, "conversations.history", {"channel": channel, "limit": limit})
+    messages = data.get("messages", [])
+    items = [{"text": m.get("text", ""), "ts": m.get("ts", ""), "user": m.get("user", "")} for m in messages]
+    _slack_format(items, f"Slack Channel: {channel}", as_json)
+
+
+def _slack_format(items: list, title: str, as_json: bool):
+    if not items:
+        print(f"## {title}\n\n_No messages found._\n")
+        return
+    if as_json:
+        print(json.dumps(items, indent=2))
+        return
+    lines = [f"## {title}\n"]
+    for item in items:
+        text = item.get("text", item.get("snippet", {}).get("text", ""))
+        ts = item.get("ts", item.get("permalink", ""))
+        lines.append(f"- {text[:300]}")
+        if ts:
+            lines.append(f"  _(ts: {ts})_")
+        lines.append("")
+    print("\n".join(lines))
 
 
 # ─── GitHub (delegates to gh CLI) ─────────────────────────────────────────────
@@ -285,9 +434,17 @@ def build_parser():
     cal.add_argument("--end", help="End date for 'range' (YYYY-MM-DD)")
 
     # gmail
-    gm = sub.add_parser("gmail", help="Gmail queries (Week 2)")
-    gm.add_argument("sub", nargs="?", default="unread")
+    gm = sub.add_parser("gmail", help="Gmail queries")
+    gm.add_argument("sub", nargs="?", default="unread", choices=["unread", "search"])
+    gm.add_argument("--query", help="Search query (for 'search' subcommand)")
     gm.add_argument("--limit", type=int, default=10)
+
+    # slack
+    sl = sub.add_parser("slack", help="Slack queries (requires SLACK_BOT_TOKEN in .env)")
+    sl.add_argument("sub", nargs="?", default="mentions", choices=["mentions", "search", "channel"])
+    sl.add_argument("--query", help="Search query (for 'search' subcommand)")
+    sl.add_argument("--channel", help="Channel ID or name (for 'channel' subcommand)")
+    sl.add_argument("--limit", type=int, default=20)
 
     # github
     gh = sub.add_parser("github", aliases=["gh"], help="GitHub queries (via gh CLI)")
@@ -308,6 +465,8 @@ def main():
         calendar_cmd(args)
     elif service == "gmail":
         gmail_cmd(args)
+    elif service == "slack":
+        slack_cmd(args)
     elif service in ("github", "gh"):
         github_cmd(args)
     else:
