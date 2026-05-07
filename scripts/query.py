@@ -179,8 +179,9 @@ def _format_calendar_md(events: list, period: str) -> str:
 
         # All-day events use 'date', timed events use 'dateTime'
         if "dateTime" in start_raw:
-            start_dt = datetime.fromisoformat(start_raw["dateTime"])
-            end_dt = datetime.fromisoformat(end_raw["dateTime"])
+            # Python 3.10 fromisoformat() doesn't handle trailing 'Z' — normalize first
+            start_dt = datetime.fromisoformat(start_raw["dateTime"].replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_raw["dateTime"].replace("Z", "+00:00"))
             time_str = f"{start_dt.strftime('%H:%M')} – {end_dt.strftime('%H:%M')}"
         else:
             start_dt = datetime.fromisoformat(start_raw["date"])

@@ -86,7 +86,8 @@ def run_auth():
     print()
 
     flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
-    creds = flow.run_local_server(port=0, open_browser=True)
+    # open_browser=False for WSL compatibility — copy the printed URL into your Windows browser
+    creds = flow.run_local_server(port=0, open_browser=False)
 
     _save_token(creds)
     print(f"\n✓ Authentication complete. Token saved to {TOKEN_FILE}")
