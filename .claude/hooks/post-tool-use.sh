@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # post-tool-use.sh
-# Fires after every tool use. Lightweight — just logs to a daily tool log.
-# Used for auditing costs and catching unexpected external calls.
+# Fires after every tool use. Pipes stdin (Claude Code tool JSON) to
+# log_tool_use.py which extracts tool name and content sizes for the daily
+# tool log. Actual token costs are aggregated at session end by cost_report.py.
 
 VAULT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TODAY=$(date +%Y-%m-%d)
 LOG_FILE="$VAULT_DIR/AI/sessions/$TODAY-tool-log.jsonl"
+PYTHON="$VAULT_DIR/.venv/bin/python3"
 
-# Claude Code injects tool name and result via env vars or stdin depending on version.
-# Log a minimal record with timestamp.
-TOOL_NAME="${CLAUDE_TOOL_NAME:-unknown}"
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+mkdir -p "$(dirname "$LOG_FILE")"
 
-echo "{\"ts\":\"$TIMESTAMP\",\"tool\":\"$TOOL_NAME\"}" >> "$LOG_FILE"
+# Pipe stdin directly — log_tool_use.py reads tool JSON from stdin
+CLAUDE_TOOL_NAME="${CLAUDE_TOOL_NAME:-unknown}" \
+  "$PYTHON" "$VAULT_DIR/scripts/log_tool_use.py" "$LOG_FILE"

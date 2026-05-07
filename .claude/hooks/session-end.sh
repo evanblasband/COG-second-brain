@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # session-end.sh
 # Fires on Stop. Creates a session summary stub in AI/sessions/ if one
-# doesn't already exist for this hour.
+# doesn't already exist for this hour, then appends actual token cost data
+# parsed from the Claude Code session JSONL.
 
 VAULT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TIMESTAMP=$(date +%Y-%m-%d-%H)
 SUMMARY_FILE="$VAULT_DIR/AI/sessions/$TIMESTAMP.md"
+PYTHON="$VAULT_DIR/.venv/bin/python3"
 
-if [[ -f "$SUMMARY_FILE" ]]; then
-  exit 0
-fi
-
-cat > "$SUMMARY_FILE" <<EOF
+if [[ ! -f "$SUMMARY_FILE" ]]; then
+  cat > "$SUMMARY_FILE" <<EOF
 ---
 created: $(date +%Y-%m-%d)
 updated: $(date +%Y-%m-%d)
@@ -47,5 +46,10 @@ source: agent-generated
 
 <!-- List of vault files changed this session -->
 EOF
+  echo "Session summary stub created: $SUMMARY_FILE"
+fi
 
-echo "Session summary stub created: $SUMMARY_FILE"
+# Append actual cost data from session JSONL (parses ~/.claude/projects/...)
+if [[ -x "$PYTHON" ]]; then
+  "$PYTHON" "$VAULT_DIR/scripts/cost_report.py" session --append-to "$SUMMARY_FILE" 2>/dev/null
+fi
