@@ -56,7 +56,7 @@ Not all threads apply to every question. Pick the 5-7 most relevant. **Thread 7 
 **Before spawning agents:**
 1. Read relevant files from the vault for existing context:
    - `05-knowledge/` for existing frameworks and mental models
-   - `04-projects/` for project-specific context if relevant
+   - `03-projects/` for project-specific context if relevant
    - Recent braindumps for the user's existing thinking on this topic
 2. State the decomposition to the user so they can course-correct before agents launch
 

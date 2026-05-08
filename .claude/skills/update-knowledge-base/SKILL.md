@@ -57,7 +57,7 @@ Launch data-gathering agents using the Task tool with `run_in_background: true`:
 Scan recent releases and release notes for knowledge base updates.
 
 1. Check vault for recent release notes:
-   Glob: 04-projects/*/release-notes/*.md
+   Glob: 03-projects/*/release-notes/*.md
    Read the most recent release notes for each active project
 
 2. If GitHub is active:
@@ -306,9 +306,6 @@ c) Skip wiki sync (vault-only)
 ```
 
 **NEVER auto-publish. Wait for explicit approval.**
-
-#### Confluence Sync
-Use the `/publish-to-confluence` skill pattern for each entry being synced.
 
 #### Notion Sync
 ```

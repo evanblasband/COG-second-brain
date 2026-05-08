@@ -66,8 +66,8 @@ Launch context-gathering agents using the Task tool with `run_in_background: tru
 ```
 Scan the vault for existing PRDs and related documents.
 
-1. Glob for PRDs: 04-projects/*/PRDs/*.md
-2. Glob for related project files: 04-projects/[project]/**/*.md
+1. Glob for PRDs: 03-projects/*/PRDs/*.md
+2. Glob for related project files: 03-projects/[project]/**/*.md
 3. Read recent PRDs to understand the user's preferred format and level of detail
 4. Look for any existing docs related to the feature being specified
 
@@ -302,11 +302,11 @@ d) Publish to [active wiki platform] (requires your approval)
 
 ### Phase 5: Save to Vault
 
-Save the PRD to: `04-projects/[project]/PRDs/prd-[feature-slug]-YYYY-MM-DD.md`
+Save the PRD to: `03-projects/[project]/PRDs/prd-[feature-slug]-YYYY-MM-DD.md`
 
 Create the directory structure if it doesn't exist:
 ```bash
-mkdir -p "04-projects/[project]/PRDs"
+mkdir -p "03-projects/[project]/PRDs"
 ```
 
 ### Phase 6: Publish (Optional, requires approval)

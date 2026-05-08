@@ -195,7 +195,7 @@ confidence: "[high|medium|low]"
 
 Save to appropriate location:
 - **Standard:** `05-knowledge/booklets/[category-slug]/[title-slug]-YYYY-MM-DD.md`
-- **Project-specific:** `04-projects/[project-slug]/resources/[title-slug]-YYYY-MM-DD.md`
+- **Project-specific:** `03-projects/[project-slug]/resources/[title-slug]-YYYY-MM-DD.md`
 - **Mixed/Unclear:** `00-inbox/url-[title-slug]-YYYY-MM-DD.md`
 
 ### 6. Tool/Resource Special Handling

@@ -95,7 +95,7 @@ For users who prefer a non-AI update, mention the update script:
 ```
 
 ## Important Notes
-- **Content folders are NEVER touched**: `00-inbox/`, `01-daily/`, `02-personal/`, `03-professional/`, `04-projects/`, `05-knowledge/`, `06-templates/` contain user data and are always ignored
+- **Content folders are NEVER touched**: `00-inbox/`, `01-daily/`, `02-people/`, `03-projects/`, `04-knowledge/`, `05-decisions/`, `06-mistakes/`, `07-resources/`, `AI/`, `templates/` contain user data and are always ignored
 - **The .gitignore is designed** so content folders are excluded from upstream tracking (only `.gitkeep` files are tracked)
 - **The update script updates itself** — `cog-update.sh` is in the framework file list
 - **No merge conflicts possible** — this uses `git checkout` for surgical file replacement, not `git merge` or `git rebase`

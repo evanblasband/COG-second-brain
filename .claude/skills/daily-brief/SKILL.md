@@ -38,7 +38,7 @@ Find verified, relevant news for personalized daily briefings with strict verifi
 3. If found:
    - Read `MY-INTERESTS.md` to get topics for news curation
    - Read `MY-PROFILE.md` to get user's name and active projects
-   - Read `03-professional/COMPETITIVE-WATCHLIST.md` if exists for competitive tracking
+   - Read `04-knowledge/competitors/WATCHLIST.md` if exists for competitive tracking
    - Use topics to curate relevant news
    - Connect news to user's active projects when relevant
 
@@ -63,7 +63,7 @@ Collect the information needed for personalized curation:
   - Topics they're interested in
   - Preferred news sources
 
-- Read `03-professional/COMPETITIVE-WATCHLIST.md` (if exists) for:
+- Read `04-knowledge/competitors/WATCHLIST.md` (if exists) for:
   - Companies/people to track
 
 #### Deduplication — Previous Brief Scan

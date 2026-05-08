@@ -203,15 +203,15 @@ tags: ["#profile", "#config", "#cog"]
 
 ## Active Projects
 [If they mentioned projects:]
-- [[04-projects/[slug]/PROJECT-OVERVIEW|Project Name 1]]
-- [[04-projects/[slug]/PROJECT-OVERVIEW|Project Name 2]]
+- [[03-projects/[slug]/PROJECT-OVERVIEW|Project Name 1]]
+- [[03-projects/[slug]/PROJECT-OVERVIEW|Project Name 2]]
 
 [If no projects:]
 *No active projects yet. Add them anytime by editing this file or running onboarding again.*
 
 ## Related
 - [[MY-INTERESTS|My Interests & News Sources]]
-- [[03-professional/COMPETITIVE-WATCHLIST|Competitive Watchlist]] *(if applicable)*
+- [[04-knowledge/competitors/WATCHLIST|Competitive Watchlist]] *(if applicable)*
 
 ## Notes
 *Feel free to add notes here about your COG usage, preferences, or anything else.*
@@ -258,7 +258,7 @@ tags: ["#interests", "#daily-brief", "#config"]
 *Update this file anytime as your interests evolve. Just edit and save—COG will pick up the changes.*
 ```
 
-#### `03-professional/COMPETITIVE-WATCHLIST.md` (only if they mentioned companies/people to track)
+#### `04-knowledge/competitors/WATCHLIST.md` (only if they mentioned companies/people to track)
 ```markdown
 ---
 type: competitive-intelligence
@@ -280,10 +280,10 @@ tags: ["#competitive", "#intelligence", "#tracking"]
 
 ---
 
-*When you mention these in braindumps, COG will automatically extract the intel to your project competitive folders.*
+*When you mention these in braindumps, COG will automatically extract the intel to `04-knowledge/competitors/`.*
 ```
 
-#### For Each Project: `04-projects/[project-slug]/PROJECT-OVERVIEW.md`
+#### For Each Project: `03-projects/[project-slug]/PROJECT-OVERVIEW.md`
 ```markdown
 ---
 type: project-overview
@@ -326,30 +326,32 @@ Based on configuration, create personalized structure:
 01-daily/
   briefs/
   checkins/
-02-personal/
-  braindumps/
-  development/
-  wellness/
-03-professional/
-  braindumps/
-  leadership/
-  strategy/
-  skills/
-04-projects/
-05-knowledge/
+02-people/
+03-projects/
+04-knowledge/
   consolidated/
   patterns/
   timeline/
   booklets/
-06-templates/
+  competitors/
+  regulations/
+  technologies/
+05-decisions/
+06-mistakes/
+07-resources/
+AI/
+  sessions/
+  research/
+  evaluations/
+  drafts/
+templates/
 ```
 
 **Project-Specific (For each listed project):**
 ```
-04-projects/[project-slug]/
+03-projects/[project-slug]/
   PROJECT-OVERVIEW.md
   braindumps/
-  competitive/
   content/
   planning/
   resources/
@@ -377,7 +379,7 @@ I've created these documents to store your preferences:
 - **[[MY-PROFILE]]** - Your basic info, role pack, and workflow preferences
 - **[[MY-INTERESTS]]** - Topics for your daily briefs
 - **[[MY-INTEGRATIONS]]** - Your active and disabled integrations
-- **[[03-professional/COMPETITIVE-WATCHLIST]]** - Companies you're tracking *(if applicable)*
+- **[[04-knowledge/competitors/WATCHLIST]]** - Companies you're tracking *(if applicable)*
 
 **You can edit these files anytime.** COG reads them when you use skills, so your changes take effect immediately.
 
@@ -432,8 +434,8 @@ Every week, use the weekly-checkin skill to review your week's insights and patt
 
 [If they have projects]
 You're tracking these projects:
-- [[04-projects/[slug]/PROJECT-OVERVIEW|Project 1]]
-- [[04-projects/[slug]/PROJECT-OVERVIEW|Project 2]]
+- [[03-projects/[slug]/PROJECT-OVERVIEW|Project 1]]
+- [[03-projects/[slug]/PROJECT-OVERVIEW|Project 2]]
 
 When you use the braindump skill, select the project to automatically file your thoughts in the right place.
 
@@ -536,8 +538,8 @@ All configuration data is stored as markdown files in:
 - `00-inbox/MY-PROFILE.md` - Basic profile with role pack
 - `00-inbox/MY-INTERESTS.md` - Interest areas
 - `00-inbox/MY-INTEGRATIONS.md` - Active/disabled external service integrations
-- `03-professional/COMPETITIVE-WATCHLIST.md` - Competitive tracking
-- `04-projects/[project]/PROJECT-OVERVIEW.md` - Project details
+- `04-knowledge/competitors/WATCHLIST.md` - Competitive tracking
+- `03-projects/[project]/PROJECT-OVERVIEW.md` - Project details
 
 Benefits of markdown storage:
 - Human-readable and editable

@@ -44,7 +44,7 @@ Comprehensive weekly review and analysis integrating insights across all domains
 
 Scan recent files from the past week:
 - Daily briefs in `01-daily/briefs/`
-- Braindumps in `02-personal/braindumps/`, `03-professional/braindumps/`, `04-projects/*/braindumps/`
+- Braindumps in `00-inbox/`, `03-projects/*/braindumps/`
 - Previous check-ins in `01-daily/checkins/`
 
 If `MY-PROFILE.md` available:

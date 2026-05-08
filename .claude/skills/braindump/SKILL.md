@@ -39,7 +39,7 @@ Transform raw thoughts into strategic intelligence through quick capture, system
    - Read the profile to get user's name and active projects
    - If user has active projects listed, offer them as domain options
    - Use user's name for friendly communication
-   - Read `03-professional/COMPETITIVE-WATCHLIST.md` if it exists for competitive intelligence detection
+   - Read `04-knowledge/competitors/WATCHLIST.md` if it exists for competitive intelligence detection
 
 **Get current timestamp (REQUIRED before generating any files):**
 
@@ -211,16 +211,16 @@ confidence: "[high|medium|low]"
 ```
 
 Save to appropriate location:
-- **Personal:** `02-personal/braindumps/braindump-YYYY-MM-DD-HHMM-<slug>.md`
-- **Professional:** `03-professional/braindumps/braindump-YYYY-MM-DD-HHMM-<slug>.md`
-- **Project:** `04-projects/[project-slug]/braindumps/braindump-YYYY-MM-DD-HHMM-<slug>.md`
+- **Personal:** `00-inbox/braindump-YYYY-MM-DD-HHMM-<slug>.md`
+- **Professional:** `00-inbox/braindump-YYYY-MM-DD-HHMM-<slug>.md`
+- **Project:** `03-projects/[project-slug]/braindumps/braindump-YYYY-MM-DD-HHMM-<slug>.md`
 - **Mixed:** `00-inbox/braindump-YYYY-MM-DD-HHMM-<slug>.md`
 
 ### 5. Competitive Intelligence Extraction
 
 If competitive intelligence detected (mentions of companies/people from watchlist):
 
-Create/update: `04-projects/[project]/competitive/[company-slug].md`
+Create/update: `04-knowledge/competitors/[company-slug].md`
 
 ```markdown
 ---

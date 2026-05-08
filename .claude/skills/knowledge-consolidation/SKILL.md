@@ -38,18 +38,16 @@ Transform scattered insights from braindumps, daily briefs, and check-ins into c
 **Scan vault for unprocessed or partially processed content:**
 
 - All braindumps since last consolidation:
-  - `02-personal/braindumps/`
-  - `03-professional/braindumps/`
-  - `04-projects/*/braindumps/`
-  - `00-inbox/braindump-*.md` (mixed domain)
+  - `00-inbox/braindump-*.md`
+  - `03-projects/*/braindumps/`
 
 - Daily briefs and check-ins:
   - `01-daily/briefs/`
   - `01-daily/checkins/`
 
 - Any meeting transcripts or project documents in:
-  - `04-projects/*/planning/`
-  - `04-projects/*/resources/`
+  - `03-projects/*/planning/`
+  - `03-projects/*/resources/`
 
 **Determine scope:**
 - Ask user: "What time period should I analyze? (last week, last month, last quarter, all time, or custom range?)"
