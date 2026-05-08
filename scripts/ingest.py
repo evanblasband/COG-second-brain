@@ -67,7 +67,7 @@ ENTITY_TYPES = [
 
 CHARS_PER_TOKEN = 4
 
-EXTRACTION_PROMPT = """You are a knowledge graph entity extractor for an AI second brain system focused on senior living technology and IoT hardware.
+SYSTEM_PROMPT_TEMPLATE = """You are a knowledge graph entity extractor for an AI second brain system focused on senior living technology and IoT hardware.
 
 Extract structured entities and relationships from the document below.
 
@@ -101,10 +101,10 @@ RULES:
 - Confidence 0.9 = explicitly stated fact; 0.7 = implied; 0.5 = inferred
 - Use canonical names (e.g. "Bluetooth Low Energy" not "BLE")
 - Extract 0-15 entities per chunk; quality over quantity
-- If no clear entities exist in this chunk, return {{"entities": [], "relationships": []}}
+- If no clear entities exist in this chunk, return {{"entities": [], "relationships": []}}"""
 
-DOCUMENT:
-{content}"""
+# Rendered once at startup — static across all extract_entities calls
+SYSTEM_PROMPT = SYSTEM_PROMPT_TEMPLATE.format(entity_types=", ".join(ENTITY_TYPES))
 
 
 # ─── Env / API key ─────────────────────────────────────────────────────────────
@@ -253,14 +253,17 @@ def extract_entities(chunk: str, client) -> dict:
     """Call Haiku to extract entities from one chunk. Returns {entities, relationships}."""
     import re
 
-    prompt = EXTRACTION_PROMPT.format(
-        entity_types=", ".join(ENTITY_TYPES),
-        content=chunk.strip(),
-    )
     msg = client.messages.create(
         model=EXTRACTION_MODEL,
         max_tokens=4096,  # rich documents can need 2k+ tokens for entity JSON
-        messages=[{"role": "user", "content": prompt}],
+        system=[
+            {
+                "type": "text",
+                "text": SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": f"DOCUMENT:\n{chunk.strip()}"}],
     )
     raw = msg.content[0].text.strip()
 
