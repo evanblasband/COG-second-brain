@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # session-end.sh
-# Fires on Stop. Creates a session summary stub in AI/sessions/ if one
-# doesn't already exist for this hour, then appends actual token cost data
-# parsed from the Claude Code session JSONL.
+# Fires on Stop. First fire: creates session stub and prompts Claude to
+# complete the session-end protocol (MEMORY.md, OPEN_LOOPS.md, summary).
+# Subsequent fires (stub already exists): appends cost data only.
 
 VAULT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TIMESTAMP=$(date +%Y-%m-%d-%H)
@@ -24,32 +24,44 @@ source: agent-generated
 
 ## What was worked on
 
-<!-- Fill in or ask Claude to summarize at session end -->
-
 ## Decisions made
-
-<!-- Copy to 05-decisions/ if significant -->
 
 ## Knowledge updates
 
-<!-- New facts to add to 04-knowledge/ -->
-
 ## Open loops opened
-
-<!-- Add to OPEN_LOOPS.md -->
 
 ## Open loops closed
 
-<!-- Remove from OPEN_LOOPS.md -->
-
 ## Files modified
 
-<!-- List of vault files changed this session -->
 EOF
-  echo "Session summary stub created: $SUMMARY_FILE"
+
+  # Prompt Claude to complete the session-end protocol.
+  # This output is injected back into the conversation — Claude must act on it.
+  cat <<PROMPT
+
+=== SESSION END PROTOCOL — ACTION REQUIRED ===
+
+The session is ending. Complete the following before closing:
+
+1. **Fill in AI/sessions/$TIMESTAMP.md** — summarize what was worked on, decisions
+   made, knowledge updates, open loops opened/closed, and files modified.
+
+2. **Update MEMORY.md** — append any cross-session learnings to the relevant section:
+   - Key Decisions: new architectural choices or tool selections
+   - Patterns Learned: recurring observations
+   - Domain Knowledge Updates: significant new facts ingested
+   - Lessons from Mistakes: prevention rules extracted
+
+3. **Update OPEN_LOOPS.md** — mark resolved items ✅ DONE, add any new
+   unresolved questions or waiting-fors that surfaced this session.
+
+Do not skip this step — MEMORY.md is the compounding value of the system.
+
+PROMPT
 fi
 
-# Append actual cost data from session JSONL (parses ~/.claude/projects/...)
+# Append actual cost data from session JSONL
 if [[ -x "$PYTHON" ]]; then
   "$PYTHON" "$VAULT_DIR/scripts/cost_report.py" session --append-to "$SUMMARY_FILE" 2>/dev/null
 fi
