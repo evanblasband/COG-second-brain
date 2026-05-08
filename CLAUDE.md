@@ -120,7 +120,7 @@ Check `00-inbox/MY-INTEGRATIONS.md` before using any external integration:
 - **Disabled**: skip silently, do not suggest setup
 - **Unknown**: ask the user; if they decline, add to Disabled
 
-Current integrations: Google Calendar (planned Week 1, Day 3), Gmail (planned Week 2)
+Current integrations: GitHub (active), Google Calendar (active), Gmail (active), Google Drive (active), Slack (active)
 
 ---
 
