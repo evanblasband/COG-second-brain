@@ -39,6 +39,12 @@ from pathlib import Path
 VAULT_ROOT = Path(__file__).parent.parent
 TOKEN_FILE = VAULT_ROOT / ".auth" / "google-token.json"
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(VAULT_ROOT / ".env")
+except ImportError:
+    pass
+
 
 # ─── Auth helpers ─────────────────────────────────────────────────────────────
 
