@@ -57,5 +57,21 @@ if [[ -f "$LOOPS_FILE" ]]; then
   fi
 fi
 
-echo ""
+
+# ── Graph conflict check ───────────────────────────────────────────────────────
+CONFLICTS_FILE="$VAULT_DIR/graph/conflicts.json"
+if [[ -f "$CONFLICTS_FILE" ]]; then
+  UNRESOLVED=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$CONFLICTS_FILE'))
+    print(len([c for c in d.get('conflicts', []) if c.get('status') == 'unresolved']))
+except: print(0)
+" 2>/dev/null)
+  if [[ "$UNRESOLVED" -gt 0 ]]; then
+    echo "Graph conflicts: $UNRESOLVED unresolved — review graph/conflicts.json before ingesting"
+    echo ""
+  fi
+fi
+
 echo "========================================================"

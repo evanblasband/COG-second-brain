@@ -165,7 +165,20 @@ pipeline: research.py
 
 # ─── Main pipeline ─────────────────────────────────────────────────────────────
 
-def ingest_url(url: str, category: str, subcategory: str | None, force: bool):
+def run_ingest(path: Path):
+    """Call ingest.py on a newly written note to extract entities into the graph."""
+    import subprocess
+    ingest_script = VAULT_ROOT / "scripts" / "ingest.py"
+    python = sys.executable
+    result = subprocess.run(
+        [python, str(ingest_script), str(path), "--yes"],
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        print(f"  ⚠️  ingest.py returned non-zero for {path.name} — check graph/conflicts.json")
+
+
+def ingest_url(url: str, category: str, subcategory: str | None, force: bool, no_ingest: bool = False):
     if category not in VALID_CATEGORIES:
         _die(f"Unknown category '{category}'. Valid: {', '.join(sorted(VALID_CATEGORIES))}")
 
@@ -205,6 +218,10 @@ def ingest_url(url: str, category: str, subcategory: str | None, force: bool):
     }
     save_manifest(manifest)
 
+    if not no_ingest:
+        print(f"  → Running entity extraction on {path.name}...")
+        run_ingest(path)
+
 
 def show_manifest():
     manifest = load_manifest()
@@ -236,6 +253,7 @@ def main():
     parser.add_argument("--category", help=f"Knowledge category: {', '.join(sorted(VALID_CATEGORIES))}")
     parser.add_argument("--subcategory", help="Optional subcategory (e.g. 'iot-protocols')")
     parser.add_argument("--force", action="store_true", help="Re-ingest even if hash unchanged")
+    parser.add_argument("--no-ingest", action="store_true", help="Skip entity extraction — write note only, do not update graph")
     parser.add_argument("--manifest", action="store_true", help="Show ingest manifest")
 
     args = parser.parse_args()
@@ -248,7 +266,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    ingest_url(args.url, args.category, args.subcategory, args.force)
+    ingest_url(args.url, args.category, args.subcategory, args.force, args.no_ingest)
 
 
 if __name__ == "__main__":

@@ -32,7 +32,31 @@ from pathlib import Path
 VAULT_ROOT = Path(__file__).parent.parent
 GRAPH_FILE = VAULT_ROOT / "graph" / "graph.json"
 MANIFEST_FILE = VAULT_ROOT / "graph" / "ingest_manifest.json"
+CONFLICTS_FILE = VAULT_ROOT / "graph" / "conflicts.json"
 HOOKS_DIR = VAULT_ROOT / ".claude" / "hooks"
+
+
+# ─── Config ────────────────────────────────────────────────────────────────────
+
+def load_config() -> dict:
+    config_file = VAULT_ROOT / "config" / "config.yaml"
+    if not config_file.exists():
+        return {}
+    try:
+        import yaml
+        with open(config_file) as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+CONFIG = load_config()
+
+HAIKU_INPUT_COST_PER_MTOK = CONFIG.get("ingest", {}).get("haiku_input_cost_per_mtok", 0.80)
+HAIKU_OUTPUT_COST_PER_MTOK = CONFIG.get("ingest", {}).get("haiku_output_cost_per_mtok", 4.00)
+AUTO_APPROVE_THRESHOLD_USD = CONFIG.get("cost_limits", {}).get("ingest_auto_approve_usd", 0.10)
+CHUNK_SIZE = CONFIG.get("ingest", {}).get("chunk_size_chars", 4000)
+EXTRACTION_MODEL = CONFIG.get("models", {}).get("extraction", "claude-haiku-4-5-20251001")
 
 ENTITY_TYPES = [
     "HardwareComponent", "DataStream", "BackendService", "APIEndpoint",
@@ -41,12 +65,7 @@ ENTITY_TYPES = [
     "Project", "Dependency",
 ]
 
-# Approximate Haiku pricing (update in config.yaml if rates change)
-HAIKU_INPUT_COST_PER_MTOK = 0.80
-HAIKU_OUTPUT_COST_PER_MTOK = 4.00
-AUTO_APPROVE_THRESHOLD_USD = 0.10
 CHARS_PER_TOKEN = 4
-CHUNK_SIZE = 4000  # chars per extraction chunk
 
 EXTRACTION_PROMPT = """You are a knowledge graph entity extractor for an AI second brain system focused on senior living technology and IoT hardware.
 
@@ -144,6 +163,48 @@ def save_manifest(manifest: dict):
         json.dump(manifest, f, indent=2, default=str)
 
 
+# ─── Conflicts I/O ────────────────────────────────────────────────────────────
+
+def load_conflicts() -> dict:
+    if CONFLICTS_FILE.exists():
+        with open(CONFLICTS_FILE) as f:
+            return json.load(f)
+    return {"conflicts": []}
+
+
+def save_conflicts(conflicts: dict):
+    with open(CONFLICTS_FILE, "w") as f:
+        json.dump(conflicts, f, indent=2, default=str)
+
+
+def log_conflict(entity_name: str, conflict_type: str, existing: dict, incoming: dict, source: str):
+    """Append a conflict entry to conflicts.json for human review."""
+    conflicts = load_conflicts()
+    conflicts["conflicts"].append({
+        "id": str(uuid.uuid4())[:8],
+        "detected": datetime.now(timezone.utc).isoformat(),
+        "status": "unresolved",
+        "entity_name": entity_name,
+        "conflict_type": conflict_type,
+        "existing": {
+            "type": existing.get("type"),
+            "description": existing.get("description", ""),
+            "sources": existing.get("sources", []),
+            "confidence": existing.get("confidence"),
+        },
+        "incoming": {
+            "type": incoming.get("type"),
+            "description": incoming.get("description", ""),
+            "source": source,
+            "confidence": incoming.get("confidence"),
+        },
+        "resolved_by": None,
+        "resolution": None,
+    })
+    save_conflicts(conflicts)
+    print(f"  ⚠️  Conflict logged: '{entity_name}' ({conflict_type}) → graph/conflicts.json")
+
+
 # ─── Chunking ──────────────────────────────────────────────────────────────────
 
 def chunk_document(content: str) -> list[str]:
@@ -197,7 +258,7 @@ def extract_entities(chunk: str, client) -> dict:
         content=chunk.strip(),
     )
     msg = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=EXTRACTION_MODEL,
         max_tokens=4096,  # rich documents can need 2k+ tokens for entity JSON
         messages=[{"role": "user", "content": prompt}],
     )
@@ -243,9 +304,15 @@ def merge_node(graph: dict, entity: dict, source_path: str) -> tuple[str, bool]:
     if existing_id:
         node = graph["nodes"][existing_id]
 
-        # Conflict: same name, different type
+        # Conflict: same name, different type — log for human review, skip merge
         if node["type"] != entity["type"]:
-            print(f"  ⚠️  Conflict: '{entity['name']}' type {node['type']} → {entity['type']} (skipped)")
+            log_conflict(
+                entity_name=entity["name"],
+                conflict_type="type_mismatch",
+                existing=node,
+                incoming=entity,
+                source=source_path,
+            )
             return existing_id, False
 
         # Update: merge attributes, bump version
