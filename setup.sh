@@ -238,6 +238,50 @@ else
   info "first, then re-authorize once the work account is provisioned."
 fi
 
+# ─── 6c. SLACK AUTH ──────────────────────────────────────────────────────────
+section "Slack (user token)"
+
+SLACK_TOKEN=$(grep "^SLACK_BOT_TOKEN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+if [[ -n "$SLACK_TOKEN" && "$SLACK_TOKEN" != "" ]]; then
+  ok "SLACK_BOT_TOKEN set in .env"
+  if python3 -c "
+import os, sys
+from pathlib import Path
+sys.path.insert(0, str(Path('$VAULT_DIR')))
+try:
+    from dotenv import load_dotenv
+    load_dotenv('$ENV_FILE')
+except ImportError:
+    pass
+token = os.getenv('SLACK_BOT_TOKEN','')
+import urllib.request, urllib.parse, json
+req = urllib.request.Request(
+    'https://slack.com/api/auth.test',
+    headers={'Authorization': f'Bearer {token}'}
+)
+with urllib.request.urlopen(req, timeout=5) as r:
+    data = json.loads(r.read())
+if data.get('ok'):
+    print(f'  Authenticated as: {data.get(\"user\",\"unknown\")} ({data.get(\"team\",\"unknown\")})')
+    sys.exit(0)
+else:
+    sys.exit(1)
+" 2>/dev/null; then
+    ok "Slack token valid"
+  else
+    warn "Slack token set but auth check failed — verify the token in .env"
+  fi
+else
+  warn "Slack not configured"
+  info "To set up Slack:"
+  info "  1. Go to https://api.slack.com/apps → Create New App → From scratch"
+  info "  2. OAuth & Permissions → User Token Scopes → add:"
+  info "       channels:history, channels:read, im:history, users:read, search:read"
+  info "  3. Install App → copy 'User OAuth Token' (starts with xoxp-)"
+  info "  4. Add to .env: SLACK_BOT_TOKEN=xoxp-..."
+  info "  Test: python scripts/query.py slack mentions --limit 3"
+fi
+
 # ─── 6b. DOCKER SANDBOX ──────────────────────────────────────────────────────
 section "Docker sandbox"
 
