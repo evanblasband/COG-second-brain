@@ -53,81 +53,113 @@ check_cmd() {
   return 1
 }
 
-# git
+_apt_updated=false
+_apt_update_once() {
+  if [[ "$_apt_updated" == "false" ]]; then
+    info "Running apt-get update..."
+    sudo apt-get update -q
+    _apt_updated=true
+  fi
+}
+
+# Ask user before installing a missing dependency.
+# Usage: prompt_install "label" "install_cmd"
+# Returns 0 if user said yes and install succeeded, 1 otherwise.
+prompt_install() {
+  local label="$1"
+  local cmd="$2"
+  echo ""
+  read -r -p "  Install $label now? [y/N] " _reply
+  if [[ "$_reply" =~ ^[Yy]$ ]]; then
+    if [[ "$cmd" == *"apt-get install"* ]]; then
+      _apt_update_once
+    fi
+    eval "$cmd"
+    return $?
+  fi
+  return 1
+}
+
+# git (required)
 check_cmd git || {
   warn "git not found"
   if [[ "$OS" == "mac" ]]; then
-    info "Run: brew install git"
+    prompt_install "git" "brew install git"
   else
-    info "Run: sudo apt-get install -y git"
+    prompt_install "git" "sudo apt-get install -y git"
   fi
-  warn "Install git and re-run setup.sh"
-  exit 1
+  command -v git &>/dev/null && ok "git installed" || { fail "git is required — install it and re-run setup.sh"; exit 1; }
 }
 
-# python3
+# python3 (required)
 if check_cmd python3; then
   PY_VERSION=$(python3 --version 2>&1)
   info "Version: $PY_VERSION"
 else
   warn "python3 not found"
   if [[ "$OS" == "mac" ]]; then
-    info "Run: brew install python@3.12"
+    prompt_install "Python 3.12" "brew install python@3.12"
   else
-    info "Run: sudo apt-get install -y python3 python3-pip python3-venv"
+    prompt_install "Python 3 + pip + venv" "sudo apt-get install -y python3 python3-pip python3-venv"
   fi
-  warn "Install Python 3.10+ and re-run setup.sh"
-  exit 1
+  if command -v python3 &>/dev/null; then
+    ok "python3 installed ($(python3 --version 2>&1))"
+  else
+    fail "Python 3.10+ is required — install it and re-run setup.sh"
+    exit 1
+  fi
 fi
 
-# tmux (optional but recommended for multi-agent sessions)
+# tmux (optional)
 check_cmd tmux || {
   warn "tmux not installed (optional — needed for multi-agent sessions)"
   if [[ "$OS" == "mac" ]]; then
-    info "Install with: brew install tmux"
+    prompt_install "tmux (optional)" "brew install tmux"
   else
-    info "Install with: sudo apt-get install -y tmux"
+    prompt_install "tmux (optional)" "sudo apt-get install -y tmux"
   fi
+  command -v tmux &>/dev/null && ok "tmux installed"
 }
 
-# gh CLI
+# gh CLI (optional)
 if check_cmd gh; then
   true
 elif [[ -f "$HOME/bin/gh" ]]; then
   ok "gh found at ~/bin/gh"
   export PATH="$HOME/bin:$PATH"
 else
-  warn "gh CLI not installed"
+  warn "gh CLI not installed (optional — needed for GitHub integration)"
   if [[ "$OS" == "mac" ]]; then
-    info "Install with: brew install gh"
+    prompt_install "gh CLI (optional)" "brew install gh"
   else
-    info "Install without sudo:"
-    info "  mkdir -p ~/bin"
-    info "  curl -sL https://github.com/cli/cli/releases/download/v2.71.0/gh_2.71.0_linux_amd64.tar.gz | tar -xz -C /tmp"
-    info "  cp /tmp/gh_2.71.0_linux_amd64/bin/gh ~/bin/gh"
-    info "  echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+    prompt_install "gh CLI (optional, no sudo)" \
+      'mkdir -p ~/bin && curl -sL https://github.com/cli/cli/releases/download/v2.71.0/gh_2.71.0_linux_amd64.tar.gz | tar -xz -C /tmp && cp /tmp/gh_2.71.0_linux_amd64/bin/gh ~/bin/gh && export PATH="$HOME/bin:$PATH"'
   fi
-  warn "Install gh CLI and re-run setup.sh"
+  { command -v gh &>/dev/null || [[ -f "$HOME/bin/gh" ]]; } && ok "gh installed" || warn "gh not installed — GitHub features will be unavailable"
 fi
 
-# Claude Code
+# Claude Code (optional but strongly recommended)
 if check_cmd claude; then
   true
 else
   warn "Claude Code (claude CLI) not installed"
-  info "Install with: npm install -g @anthropic-ai/claude-code"
-  info "Or via: https://claude.ai/code"
-  warn "Install Claude Code and re-run setup.sh"
+  if command -v npm &>/dev/null; then
+    prompt_install "Claude Code (optional)" "npm install -g @anthropic-ai/claude-code"
+    command -v claude &>/dev/null && ok "Claude Code installed" || warn "Claude Code not installed — install from https://claude.ai/code"
+  else
+    warn "npm not found — install Node.js first, then run: npm install -g @anthropic-ai/claude-code"
+    info "Node.js: https://nodejs.org or brew install node"
+  fi
 fi
 
-# Obsidian (GUI app — cannot auto-install on all platforms)
+# Obsidian (GUI app — auto-install only on macOS via brew)
 if [[ "$OS" == "mac" ]]; then
   if [[ -d "/Applications/Obsidian.app" ]]; then
     ok "Obsidian installed"
   else
-    warn "Obsidian not installed"
-    info "Install with: brew install --cask obsidian"
-    info "Or download from: https://obsidian.md/download"
+    warn "Obsidian not installed (optional — for visual vault browsing)"
+    prompt_install "Obsidian (optional)" "brew install --cask obsidian"
+    [[ -d "/Applications/Obsidian.app" ]] && ok "Obsidian installed" || info "Install manually from https://obsidian.md/download"
   fi
 else
   warn "Obsidian: install manually from https://obsidian.md/download"
