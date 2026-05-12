@@ -46,20 +46,17 @@ def build_digest() -> str:
         f"# Heartbeat — {timestamp}\n",
     ]
 
-    # Calendar
-    sections.append("## Calendar")
+    # Calendar (query.py emits its own ## header)
     cal = run_query("calendar", "upcoming", "3")
-    sections.append(cal if cal.strip() else "_No upcoming events._\n")
+    sections.append(cal if cal.strip() else "## Calendar\n\n_No upcoming events._\n")
 
-    # Gmail
-    sections.append("## Email (unread)")
+    # Gmail (query.py emits its own ## header)
     gmail = run_query("gmail", "unread", "--limit", "5")
-    sections.append(gmail if gmail.strip() else "_Gmail not configured or no unread messages._\n")
+    sections.append(gmail if gmail.strip() else "## Email (unread)\n\n_Gmail not configured or no unread messages._\n")
 
-    # Slack mentions (optional — fails gracefully if token not set)
-    sections.append("## Slack Mentions")
+    # Slack mentions (query.py emits its own ## header)
     slack = run_query("slack", "mentions", "--limit", "5")
-    sections.append(slack if slack.strip() else "_Slack not configured._\n")
+    sections.append(slack if slack.strip() else "## Slack Mentions\n\n_Slack not configured._\n")
 
     # Google Drive sync check (optional — skipped if config not present)
     if DRIVE_SYNC_CONFIG.exists():
