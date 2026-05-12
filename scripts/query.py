@@ -29,6 +29,10 @@ Usage:
     python scripts/query.py notion search "query" [--limit N]
     python scripts/query.py notion page PAGE_ID
     python scripts/query.py notion db DATABASE_ID [--limit N]
+    python scripts/query.py foundry ontology [filter]     # list all object types, optional name filter
+    python scripts/query.py foundry search "gateway"      # alias for ontology with filter
+    python scripts/query.py foundry objects Gateway [--limit N]
+    python scripts/query.py foundry schema GatewayHealthStatus
 
 Output: markdown by default, --json for structured output.
 """
@@ -759,6 +763,157 @@ def github_cmd(args):
     print(result.stdout)
 
 
+# ─── Foundry ──────────────────────────────────────────────────────────────────
+
+def _foundry_request(host: str, token: str, method: str, path: str, body: dict | None = None) -> dict:
+    import urllib.request
+    url = f"{host.rstrip('/')}{path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()
+        _die(f"Foundry API {method} {path} → {e.code}: {detail[:300]}")
+
+
+def _foundry_get_ontology(host: str, token: str) -> str:
+    """Return the apiName of the first available ontology."""
+    data = _foundry_request(host, token, "GET", "/api/v2/ontologies")
+    ontologies = data.get("data", []) if isinstance(data, dict) else []
+    if not ontologies:
+        _die("No ontologies found on this Foundry instance.")
+    return ontologies[0].get("apiName", "")
+
+
+def foundry_cmd(args):
+    token = os.getenv("FOUNDRY_TOKEN")
+    host = os.getenv("FOUNDRY_HOST")
+    if not token or not host:
+        _die(
+            "FOUNDRY_TOKEN and FOUNDRY_HOST must be set in .env\n"
+            "Get a token from: Foundry → Profile → User Settings → API Keys\n"
+            "FOUNDRY_HOST is the base URL, e.g. https://your-instance.palantirfoundry.com"
+        )
+
+    sub = getattr(args, "sub", "ontology")
+    if sub == "ontology":
+        _foundry_ontology(host, token, args)
+    elif sub == "search":
+        _foundry_search(host, token, args)
+    elif sub == "objects":
+        _foundry_objects(host, token, args)
+    elif sub == "schema":
+        _foundry_schema(host, token, args)
+    else:
+        _die(f"Unknown foundry subcommand: {sub}")
+
+
+def _foundry_ontology(host: str, token: str, args):
+    """List all object types, optionally filtered by a search term."""
+    ontology = _foundry_get_ontology(host, token)
+    obj_data = _foundry_request(host, token, "GET", f"/api/v2/ontologies/{ontology}/objectTypes")
+    object_types = obj_data.get("data", []) if isinstance(obj_data, dict) else []
+
+    query = getattr(args, "query", "") or ""
+    if query:
+        q = query.lower()
+        object_types = [
+            ot for ot in object_types
+            if q in ot.get("displayName", "").lower() or q in ot.get("apiName", "").lower()
+        ]
+
+    if args.json:
+        print(json.dumps(object_types, indent=2))
+        return
+
+    title = f"Foundry Object Types — filter: '{query}'" if query else "Foundry Object Types"
+    lines = [f"## {title}\n", f"_{len(object_types)} types_\n"]
+    for ot in object_types:
+        display = ot.get("displayName", ot.get("apiName", "?"))
+        api_name = ot.get("apiName", "")
+        desc = ot.get("description", "")
+        lines.append(f"- **{display}** (`{api_name}`)" + (f" — {desc}" if desc else ""))
+    print("\n".join(lines))
+
+
+def _foundry_search(host: str, token: str, args):
+    """Search object type names client-side (no server-side search API available)."""
+    query = getattr(args, "query", "")
+    # Reuse ontology with query filter
+    args.query = query
+    _foundry_ontology(host, token, args)
+
+
+def _foundry_objects(host: str, token: str, args):
+    """List objects of a specific type from the ontology."""
+    object_type = args.object_type
+    limit = getattr(args, "limit", 20)
+    ontology = _foundry_get_ontology(host, token)
+
+    data = _foundry_request(
+        host, token, "GET",
+        f"/api/v2/ontologies/{ontology}/objects/{object_type}?pageSize={limit}",
+    )
+    objects = data.get("data", []) if isinstance(data, dict) else []
+
+    if args.json:
+        print(json.dumps(objects, indent=2))
+        return
+
+    if not objects:
+        print(f"## Foundry: {object_type}\n\n_No objects found._\n")
+        return
+
+    lines = [f"## Foundry: {object_type} (first {len(objects)})\n"]
+    for obj in objects:
+        title = obj.get("__title") or obj.get("name") or obj.get("__primaryKey", "(no id)")
+        lines.append(f"### {title}")
+        for k, v in obj.items():
+            if k.startswith("__") or v is None or v == "" or v == "[]":
+                continue
+            lines.append(f"- **{k}:** {v}")
+        lines.append("")
+    print("\n".join(lines))
+
+
+def _foundry_schema(host: str, token: str, args):
+    """Show the property schema for an object type."""
+    object_type = args.object_type
+    ontology = _foundry_get_ontology(host, token)
+
+    data = _foundry_request(
+        host, token, "GET",
+        f"/api/v2/ontologies/{ontology}/objectTypes/{object_type}",
+    )
+
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return
+
+    display = data.get("displayName", object_type)
+    desc = data.get("description", "")
+    pk = data.get("primaryKey", "")
+    props = data.get("properties", {})
+
+    lines = [f"## Foundry Schema: {display}\n"]
+    if desc:
+        lines.append(f"_{desc}_\n")
+    lines.append(f"- **API name:** `{object_type}`")
+    lines.append(f"- **Primary key:** `{pk}`")
+    lines.append(f"- **Properties ({len(props)}):**\n")
+    for pname, pdef in props.items():
+        ptype = pdef.get("dataType", {}).get("type", "?") if isinstance(pdef, dict) else "?"
+        pdisplay = pdef.get("displayName", pname) if isinstance(pdef, dict) else pname
+        lines.append(f"  - `{pname}` ({ptype}) — {pdisplay}")
+    print("\n".join(lines))
+
+
 # ─── CLI wiring ───────────────────────────────────────────────────────────────
 
 def build_parser():
@@ -831,6 +986,23 @@ def build_parser():
     gh.add_argument("--state", default="open")
     gh.add_argument("--limit", type=int, default=20)
 
+    # foundry
+    fo = sub.add_parser("foundry", help="Palantir Foundry queries (requires FOUNDRY_TOKEN + FOUNDRY_HOST in .env)")
+    fo_sub = fo.add_subparsers(dest="sub", required=True)
+
+    fo_ont = fo_sub.add_parser("ontology", help="List all object types in the Foundry Ontology")
+    fo_ont.add_argument("query", nargs="?", default="", help="Optional filter string (e.g. 'gateway', 'node')")
+
+    fo_search = fo_sub.add_parser("search", help="Search object type names (alias for ontology with filter)")
+    fo_search.add_argument("query", help="Search string")
+
+    fo_obj = fo_sub.add_parser("objects", help="List objects of a given type (e.g. Gateway, BluetoothNodeHealth)")
+    fo_obj.add_argument("object_type", help="Object type apiName (e.g. Gateway)")
+    fo_obj.add_argument("--limit", type=int, default=20)
+
+    fo_schema = fo_sub.add_parser("schema", help="Show property schema for an object type")
+    fo_schema.add_argument("object_type", help="Object type apiName (e.g. GatewayHealthStatus)")
+
     return parser
 
 
@@ -851,6 +1023,8 @@ def main():
         github_cmd(args)
     elif service == "notion":
         notion_cmd(args)
+    elif service == "foundry":
+        foundry_cmd(args)
     else:
         parser.print_help()
         sys.exit(1)
