@@ -16,9 +16,18 @@ Usage:
     python scripts/ingest.py --manifest                        # show what's ingested
     python scripts/ingest.py --stats                           # graph node counts by type
 
+    python scripts/ingest.py --drive FILE_ID                   # fetch Drive file → ingest
+    python scripts/ingest.py --drive FILE_ID --save 04-knowledge/category/name.md
+    python scripts/ingest.py --notion PAGE_ID                  # fetch Notion page → ingest
+    python scripts/ingest.py --notion PAGE_ID --save 04-knowledge/category/name.md
+    python scripts/ingest.py --notion-db DB_ID                 # fetch all DB rows → ingest each
+
 Environment:
     ANTHROPIC_API_KEY   required (or set in .env)
+    NOTION_TOKEN        required for --notion/--notion-db (or set in .env)
 """
+
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -30,6 +39,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 VAULT_ROOT = Path(__file__).parent.parent
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(VAULT_ROOT / ".env")
+except ImportError:
+    pass
+
 GRAPH_FILE = VAULT_ROOT / "graph" / "graph.json"
 MANIFEST_FILE = VAULT_ROOT / "graph" / "ingest_manifest.json"
 CONFLICTS_FILE = VAULT_ROOT / "graph" / "conflicts.json"
@@ -378,6 +394,302 @@ def merge_relationship(graph: dict, rel: dict, name_to_id: dict[str, str]):
     })
 
 
+# ─── Drive fetch ──────────────────────────────────────────────────────────────
+
+_DRIVE_EXPORT_MIMES = {
+    "application/vnd.google-apps.document": "text/plain",
+    "application/vnd.google-apps.spreadsheet": "text/csv",
+    "application/vnd.google-apps.presentation": "text/plain",
+}
+
+_GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
+
+
+def _get_google_creds():
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+    except ImportError:
+        _die("google-auth not installed. Run: pip install -r requirements.txt")
+
+    token_file = VAULT_ROOT / ".auth" / "google-token.json"
+    if not token_file.exists():
+        _die(f"No Google token at {token_file}. Run: python scripts/google_auth.py")
+
+    creds = Credentials.from_authorized_user_file(str(token_file), _GOOGLE_SCOPES)
+    if not creds.valid and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        with open(token_file, "w") as f:
+            f.write(creds.to_json())
+    return creds
+
+
+def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client):
+    """Fetch a Google Drive file, save locally, then ingest."""
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        _die("google-api-python-client not installed. Run: pip install -r requirements.txt")
+
+    creds = _get_google_creds()
+    service = build("drive", "v3", credentials=creds)
+
+    meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
+    name = meta.get("name", file_id)
+    mime = meta.get("mimeType", "")
+    export_mime = _DRIVE_EXPORT_MIMES.get(mime)
+
+    print(f"Fetching Drive file: {name}")
+
+    if export_mime:
+        content = service.files().export(fileId=file_id, mimeType=export_mime).execute()
+        text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+    else:
+        import io
+        from googleapiclient.http import MediaIoBaseDownload
+        buf = io.BytesIO()
+        req = service.files().get_media(fileId=file_id)
+        downloader = MediaIoBaseDownload(buf, req)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        text = buf.getvalue().decode("utf-8", errors="replace")
+
+    if save_path is None:
+        safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
+        save_path = Path(f"/tmp/{safe}.md")
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save_path.write_text(text, encoding="utf-8")
+    print(f"Saved to: {save_path}")
+
+    ingest_file(save_path, force, yes, client)
+
+
+# ─── Notion fetch ─────────────────────────────────────────────────────────────
+
+_NOTION_API = "https://api.notion.com/v1"
+_NOTION_VERSION = "2022-06-28"
+
+
+def _notion_req(token: str, method: str, path: str, body=None) -> dict:
+    import urllib.request
+    import urllib.error
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": _NOTION_VERSION,
+        "Content-Type": "application/json",
+    }
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(f"{_NOTION_API}{path}", data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        _die(f"Notion API {method} {path} → {e.code}: {e.read().decode()}")
+
+
+def _notion_text(rich_text: list) -> str:
+    return "".join(rt.get("plain_text", "") for rt in rich_text)
+
+
+def _notion_page_title(page: dict) -> str:
+    for prop in page.get("properties", {}).values():
+        if prop.get("type") == "title":
+            return _notion_text(prop.get("title", []))
+    return "(untitled)"
+
+
+def _blocks_to_md(token: str, block_id: str, depth: int = 0) -> list:
+    """Recursively fetch Notion blocks and convert to markdown lines."""
+    lines = []
+    cursor = None
+    indent = "  " * depth
+
+    while True:
+        qs = f"?page_size=100{f'&start_cursor={cursor}' if cursor else ''}"
+        data = _notion_req(token, "GET", f"/blocks/{block_id}/children{qs}")
+
+        for block in data.get("results", []):
+            btype = block.get("type", "")
+            bc = block.get(btype, {})
+            text = _notion_text(bc.get("rich_text", []))
+
+            if btype == "paragraph":
+                lines.append(f"{indent}{text}" if text else "")
+            elif btype == "heading_1":
+                lines.append(f"# {text}")
+            elif btype == "heading_2":
+                lines.append(f"## {text}")
+            elif btype == "heading_3":
+                lines.append(f"### {text}")
+            elif btype == "bulleted_list_item":
+                lines.append(f"{indent}- {text}")
+            elif btype == "numbered_list_item":
+                lines.append(f"{indent}1. {text}")
+            elif btype == "to_do":
+                mark = "x" if bc.get("checked") else " "
+                lines.append(f"{indent}- [{mark}] {text}")
+            elif btype == "toggle":
+                lines.append(f"{indent}- {text}")
+            elif btype == "quote":
+                lines.append(f"> {text}")
+            elif btype == "callout":
+                emoji = (bc.get("icon") or {}).get("emoji", "")
+                lines.append(f"> {emoji} {text}".strip())
+            elif btype == "code":
+                lang = bc.get("language", "")
+                lines.append(f"```{lang}\n{text}\n```")
+            elif btype == "divider":
+                lines.append("---")
+            elif btype == "image":
+                url = (bc.get("file") or bc.get("external") or {}).get("url", "")
+                caption = _notion_text(bc.get("caption", []))
+                lines.append(f"![{caption}]({url})")
+            elif btype in ("child_page", "child_database"):
+                lines.append(f"*[Child: {bc.get('title', btype)}]*")
+                continue  # don't recurse into child pages
+
+            if block.get("has_children") and btype not in ("child_page", "child_database"):
+                lines.extend(_blocks_to_md(token, block["id"], depth + 1))
+
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+
+    return lines
+
+
+def _notion_page_to_md(token: str, page_id: str) -> tuple:
+    """Fetch a Notion page (metadata + blocks) and return (title, markdown)."""
+    page = _notion_req(token, "GET", f"/pages/{page_id}")
+    title = _notion_page_title(page)
+    last_edited = page.get("last_edited_time", "")[:10]
+    url = page.get("url", "")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    frontmatter = (
+        f"---\n"
+        f"created: {today}\n"
+        f"updated: {last_edited}\n"
+        f"tags: [notion, imported]\n"
+        f"status: reference\n"
+        f"type: knowledge\n"
+        f"source: external\n"
+        f"notion_id: {page_id}\n"
+        f"notion_url: {url}\n"
+        f"---"
+    )
+
+    # Non-title properties
+    prop_lines = []
+    for pname, prop in page.get("properties", {}).items():
+        ptype = prop.get("type", "")
+        if ptype == "title":
+            continue
+        if ptype == "rich_text":
+            val = _notion_text(prop.get("rich_text", []))
+        elif ptype == "select":
+            val = (prop.get("select") or {}).get("name", "")
+        elif ptype == "multi_select":
+            val = ", ".join(o.get("name", "") for o in prop.get("multi_select", []))
+        elif ptype == "date":
+            val = (prop.get("date") or {}).get("start", "")
+        elif ptype == "checkbox":
+            val = str(prop.get("checkbox", False))
+        elif ptype == "number":
+            val = str(prop.get("number", ""))
+        elif ptype == "url":
+            val = prop.get("url", "") or ""
+        else:
+            continue
+        if val:
+            prop_lines.append(f"**{pname}:** {val}")
+
+    body_lines = _blocks_to_md(token, page_id)
+
+    parts = [frontmatter, f"\n# {title}\n"]
+    if prop_lines:
+        parts.append("\n".join(prop_lines))
+    if body_lines:
+        parts.append("\n".join(body_lines))
+
+    return title, "\n\n".join(parts)
+
+
+def _slugify(s: str, max_len: int = 50) -> str:
+    return "".join(c if c.isalnum() or c in "-_" else "-" for c in s.lower()).strip("-")[:max_len]
+
+
+def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client):
+    """Fetch a Notion page, save as markdown, then ingest."""
+    token = os.getenv("NOTION_TOKEN")
+    if not token:
+        _die("NOTION_TOKEN not set in .env")
+
+    print(f"Fetching Notion page: {page_id}")
+    title, content = _notion_page_to_md(token, page_id)
+
+    if save_path is None:
+        slug = _slugify(title) or page_id[:8]
+        save_path = Path(f"/tmp/notion-{slug}.md")
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save_path.write_text(content, encoding="utf-8")
+    print(f"Saved to: {save_path}")
+
+    ingest_file(save_path, force, yes, client)
+
+
+def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client):
+    """Fetch all pages from a Notion database and ingest each one."""
+    token = os.getenv("NOTION_TOKEN")
+    if not token:
+        _die("NOTION_TOKEN not set in .env")
+
+    db_meta = _notion_req(token, "GET", f"/databases/{db_id}")
+    db_title = _notion_text(db_meta.get("title", []))
+    print(f"Fetching Notion DB: {db_title or db_id}")
+
+    if save_dir is None:
+        save_dir = Path(f"/tmp/notion-db-{_slugify(db_title or db_id)}")
+
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    cursor = None
+    total = 0
+
+    while True:
+        body = {"page_size": 100}
+        if cursor:
+            body["start_cursor"] = cursor
+        data = _notion_req(token, "POST", f"/databases/{db_id}/query", body)
+
+        for page in data.get("results", []):
+            page_id = page["id"]
+            row_title, content = _notion_page_to_md(token, page_id)
+            slug = _slugify(row_title) or page_id[:8]
+            path = save_dir / f"{slug}.md"
+            path.write_text(content, encoding="utf-8")
+            print(f"  Row: {row_title}")
+            ingest_file(path, force, yes, client)
+            total += 1
+
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+
+    print(f"\nDB ingest complete: {total} pages processed")
+
+
 # ─── Core ingest pipeline ──────────────────────────────────────────────────────
 
 def ingest_file(path: Path, force: bool, yes: bool, client) -> dict:
@@ -587,6 +899,10 @@ def main():
     parser.add_argument("--yes", "-y", action="store_true", help="Skip cost confirmation prompts")
     parser.add_argument("--manifest", action="store_true", help="Show ingest manifest and exit")
     parser.add_argument("--stats", action="store_true", help="Show graph stats and exit")
+    parser.add_argument("--drive", metavar="FILE_ID", help="Fetch a Google Drive file and ingest it")
+    parser.add_argument("--notion", metavar="PAGE_ID", help="Fetch a Notion page and ingest it")
+    parser.add_argument("--notion-db", metavar="DB_ID", help="Fetch all rows from a Notion database and ingest each")
+    parser.add_argument("--save", metavar="PATH", help="Save fetched content to this path (use with --drive or --notion)")
 
     args = parser.parse_args()
 
@@ -598,6 +914,21 @@ def main():
         show_stats()
         return
 
+    client = get_client()
+    save = Path(args.save) if args.save else None
+
+    if args.drive:
+        fetch_from_drive(args.drive, save, args.force, args.yes, client)
+        return
+
+    if args.notion:
+        fetch_from_notion(args.notion, save, args.force, args.yes, client)
+        return
+
+    if args.notion_db:
+        fetch_from_notion_db(args.notion_db, save, args.force, args.yes, client)
+        return
+
     if not args.path:
         parser.print_help()
         sys.exit(1)
@@ -605,8 +936,6 @@ def main():
     target = Path(args.path)
     if not target.exists():
         _die(f"Path not found: {target}")
-
-    client = get_client()
 
     if args.batch or target.is_dir():
         ingest_batch(target, "*.md", args.force, args.yes, client)

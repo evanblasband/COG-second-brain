@@ -9,6 +9,7 @@ WHEN TO USE THIS vs MCPs
   Interactive Claude Code sessions → use MCPs (already connected via claude.ai)
     mcp__claude_ai_Google_Calendar__list_events
     mcp__claude_ai_Gmail__search_threads
+    mcp__claude_ai_Notion__notion-search
 
   Background agents / heartbeat / cron / non-Claude processes → use this script
     python scripts/query.py calendar today
@@ -25,6 +26,9 @@ Usage:
     python scripts/query.py drive search "query string"
     python scripts/query.py drive download FILE_ID [--output /path/to/file.txt]
     python scripts/query.py github prs --repo NAME      (uses gh CLI)
+    python scripts/query.py notion search "query" [--limit N]
+    python scripts/query.py notion page PAGE_ID
+    python scripts/query.py notion db DATABASE_ID [--limit N]
 
 Output: markdown by default, --json for structured output.
 """
@@ -557,6 +561,178 @@ def _drive_download(service, args):
     print(f"Ingest via: /ingest {output}")
 
 
+# ─── Notion ───────────────────────────────────────────────────────────────────
+
+_NOTION_API = "https://api.notion.com/v1"
+_NOTION_VERSION = "2022-06-28"
+
+
+def _notion_request(token: str, method: str, path: str, body: dict | None = None) -> dict:
+    import urllib.request
+    url = f"{_NOTION_API}{path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": _NOTION_VERSION,
+        "Content-Type": "application/json",
+    }
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()
+        _die(f"Notion API {method} {path} → {e.code}: {detail}")
+
+
+def _notion_plain_text(rich_text: list) -> str:
+    return "".join(rt.get("plain_text", "") for rt in rich_text)
+
+
+def _notion_page_title(page: dict) -> str:
+    props = page.get("properties", {})
+    for prop in props.values():
+        if prop.get("type") == "title":
+            return _notion_plain_text(prop.get("title", []))
+    return page.get("id", "(untitled)")
+
+
+def notion_cmd(args):
+    token = os.getenv("NOTION_TOKEN")
+    if not token:
+        _die(
+            "NOTION_TOKEN not set in .env\n"
+            "Create an internal integration at https://www.notion.so/my-integrations\n"
+            "Add: NOTION_TOKEN=secret_... to your .env file\n"
+            "Then share each workspace page/DB with the integration in Notion"
+        )
+
+    sub = getattr(args, "sub", "search")
+    if sub == "search":
+        _notion_search(token, args)
+    elif sub == "page":
+        _notion_page(token, args)
+    elif sub == "db":
+        _notion_db(token, args)
+    else:
+        _die(f"Unknown notion subcommand: {sub}")
+
+
+def _notion_search(token: str, args):
+    query = getattr(args, "query", "")
+    limit = getattr(args, "limit", 10)
+
+    body = {"query": query, "page_size": limit}
+    data = _notion_request(token, "POST", "/search", body)
+    results = data.get("results", [])
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+        return
+
+    if not results:
+        print(f"## Notion Search: '{query}'\n\n_No results._\n")
+        return
+
+    lines = [f"## Notion Search: '{query}'\n"]
+    for obj in results:
+        obj_type = obj.get("object", "unknown")
+        obj_id = obj.get("id", "")
+        url = obj.get("url", "")
+        if obj_type == "page":
+            title = _notion_page_title(obj)
+            last_edited = obj.get("last_edited_time", "")[:10]
+            lines.append(f"### {title}")
+            lines.append(f"- **Type:** Page | **ID:** `{obj_id}` | **Edited:** {last_edited}")
+        elif obj_type == "database":
+            title = _notion_plain_text(obj.get("title", []))
+            lines.append(f"### {title or '(untitled database)'}")
+            lines.append(f"- **Type:** Database | **ID:** `{obj_id}`")
+        if url:
+            lines.append(f"- **URL:** {url}")
+        lines.append("")
+    print("\n".join(lines))
+
+
+def _notion_page(token: str, args):
+    page_id = args.page_id
+    page = _notion_request(token, "GET", f"/pages/{page_id}")
+
+    if args.json:
+        print(json.dumps(page, indent=2))
+        return
+
+    title = _notion_page_title(page)
+    last_edited = page.get("last_edited_time", "")[:10]
+    url = page.get("url", "")
+    props = page.get("properties", {})
+
+    lines = [f"## {title}\n", f"- **ID:** `{page_id}`", f"- **Last edited:** {last_edited}"]
+    if url:
+        lines.append(f"- **URL:** {url}")
+    lines.append("")
+
+    # Print non-title properties
+    for name, prop in props.items():
+        ptype = prop.get("type", "")
+        if ptype == "title":
+            continue
+        if ptype == "rich_text":
+            val = _notion_plain_text(prop.get("rich_text", []))
+        elif ptype == "select":
+            val = (prop.get("select") or {}).get("name", "")
+        elif ptype == "multi_select":
+            val = ", ".join(o.get("name", "") for o in prop.get("multi_select", []))
+        elif ptype == "date":
+            date_obj = prop.get("date") or {}
+            val = date_obj.get("start", "")
+        elif ptype == "checkbox":
+            val = str(prop.get("checkbox", False))
+        elif ptype == "number":
+            val = str(prop.get("number", ""))
+        elif ptype == "url":
+            val = prop.get("url", "") or ""
+        elif ptype == "email":
+            val = prop.get("email", "") or ""
+        else:
+            val = f"({ptype})"
+        if val:
+            lines.append(f"**{name}:** {val}")
+
+    print("\n".join(lines))
+
+
+def _notion_db(token: str, args):
+    db_id = args.db_id
+    limit = getattr(args, "limit", 20)
+
+    body = {"page_size": limit}
+    data = _notion_request(token, "POST", f"/databases/{db_id}/query", body)
+    results = data.get("results", [])
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+        return
+
+    db_meta = _notion_request(token, "GET", f"/databases/{db_id}")
+    db_title = _notion_plain_text(db_meta.get("title", []))
+
+    if not results:
+        print(f"## Notion DB: {db_title}\n\n_No rows found._\n")
+        return
+
+    lines = [f"## Notion DB: {db_title} ({len(results)} rows)\n"]
+    for page in results:
+        title = _notion_page_title(page)
+        last_edited = page.get("last_edited_time", "")[:10]
+        url = page.get("url", "")
+        lines.append(f"- **{title}** | edited {last_edited}")
+        if url:
+            lines.append(f"  {url}")
+    lines.append("")
+    print("\n".join(lines))
+
+
 # ─── GitHub (delegates to gh CLI) ─────────────────────────────────────────────
 
 def github_cmd(args):
@@ -633,6 +809,21 @@ def build_parser():
     dr_dl.add_argument("file_id", help="Drive file ID (from 'list' or 'search' output)")
     dr_dl.add_argument("--output", help="Local path to save to (default: /tmp/<name>.txt)")
 
+    # notion
+    no = sub.add_parser("notion", help="Notion queries (requires NOTION_TOKEN in .env)")
+    no_sub = no.add_subparsers(dest="sub", required=True)
+
+    no_search = no_sub.add_parser("search", help="Search all Notion content the integration can see")
+    no_search.add_argument("query", nargs="?", default="", help="Search string (empty returns recent)")
+    no_search.add_argument("--limit", type=int, default=10)
+
+    no_page = no_sub.add_parser("page", help="Fetch a Notion page by ID")
+    no_page.add_argument("page_id", help="Notion page UUID")
+
+    no_db = no_sub.add_parser("db", help="Query rows from a Notion database")
+    no_db.add_argument("db_id", help="Notion database UUID")
+    no_db.add_argument("--limit", type=int, default=20)
+
     # github
     gh = sub.add_parser("github", aliases=["gh"], help="GitHub queries (via gh CLI)")
     gh.add_argument("sub", choices=["prs", "issues"])
@@ -658,6 +849,8 @@ def main():
         drive_cmd(args)
     elif service in ("github", "gh"):
         github_cmd(args)
+    elif service == "notion":
+        notion_cmd(args)
     else:
         parser.print_help()
         sys.exit(1)
