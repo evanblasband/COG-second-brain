@@ -75,6 +75,8 @@ HAIKU_OUTPUT_COST_PER_MTOK = CONFIG.get("ingest", {}).get("haiku_output_cost_per
 AUTO_APPROVE_THRESHOLD_USD = CONFIG.get("cost_limits", {}).get("ingest_auto_approve_usd", 0.10)
 CHUNK_SIZE = CONFIG.get("ingest", {}).get("chunk_size_chars", 4000)
 EXTRACTION_MODEL = CONFIG.get("models", {}).get("extraction", "claude-haiku-4-5-20251001")
+# When True, entity extraction uses `claude -p` subprocess (subscription billing) instead of direct API
+USE_CLI_BACKEND = os.getenv("INGEST_USE_CLI", "").lower() in ("1", "true", "yes")
 
 ENTITY_TYPES = [
     "HardwareComponent", "DataStream", "BackendService", "APIEndpoint",
@@ -267,9 +269,52 @@ def estimate_cost(content: str) -> tuple[float, int]:
 
 # ─── Entity extraction ─────────────────────────────────────────────────────────
 
-def extract_entities(chunk: str, client) -> dict:
-    """Call Haiku to extract entities from one chunk. Returns {entities, relationships}."""
+def _parse_entity_json(raw: str) -> dict:
+    """Parse entity JSON from raw model output. Shared by both extraction backends."""
     import re
+    json_match = re.search(r'\{[\s\S]*\}', raw)
+    if not json_match:
+        return {"entities": [], "relationships": []}
+    try:
+        result = json.loads(json_match.group(0))
+        if not isinstance(result.get("entities"), list):
+            result["entities"] = []
+        if not isinstance(result.get("relationships"), list):
+            result["relationships"] = []
+        return result
+    except json.JSONDecodeError:
+        return {"entities": [], "relationships": []}
+
+
+def _extract_entities_cli(chunk: str) -> dict:
+    """Extract entities via `claude -p` subprocess (uses subscription/OAuth auth, no API credits).
+
+    Strips ANTHROPIC_API_KEY from the subprocess env so the CLI falls back to OAuth
+    rather than billing against the (depleted) API credit balance.
+    """
+    import subprocess
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    try:
+        result = subprocess.run(
+            [
+                "claude", "-p",
+                "--append-system-prompt", SYSTEM_PROMPT,
+                f"DOCUMENT:\n{chunk.strip()}",
+            ],
+            capture_output=True, text=True, timeout=240, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        print("    (chunk timed out — skipping)", flush=True)
+        return {"entities": [], "relationships": []}
+    if result.returncode != 0:
+        return {"entities": [], "relationships": []}
+    return _parse_entity_json(result.stdout.strip())
+
+
+def extract_entities(chunk: str, client) -> dict:
+    """Extract entities from one chunk. Uses CLI backend or direct API depending on USE_CLI_BACKEND."""
+    if USE_CLI_BACKEND:
+        return _extract_entities_cli(chunk)
 
     msg = client.messages.create(
         model=EXTRACTION_MODEL,
@@ -283,24 +328,7 @@ def extract_entities(chunk: str, client) -> dict:
         ],
         messages=[{"role": "user", "content": f"DOCUMENT:\n{chunk.strip()}"}],
     )
-    raw = msg.content[0].text.strip()
-
-    # Robust JSON extraction: find the outermost {...} regardless of surrounding text,
-    # markdown fences, or preamble. Handles "```json\n{...}\n```" and plain JSON alike.
-    json_match = re.search(r'\{[\s\S]*\}', raw)
-    if not json_match:
-        return {"entities": [], "relationships": []}
-    raw = json_match.group(0)
-
-    try:
-        result = json.loads(raw)
-        if not isinstance(result.get("entities"), list):
-            result["entities"] = []
-        if not isinstance(result.get("relationships"), list):
-            result["relationships"] = []
-        return result
-    except json.JSONDecodeError:
-        return {"entities": [], "relationships": []}
+    return _parse_entity_json(msg.content[0].text.strip())
 
 
 # ─── Graph merge ───────────────────────────────────────────────────────────────
@@ -842,7 +870,11 @@ def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client, n
     """Fetch a Notion page, save as markdown, then ingest."""
     token = os.getenv("NOTION_TOKEN")
     if not token:
-        _die("NOTION_TOKEN not set in .env")
+        _die(
+            "NOTION_TOKEN not set.\n"
+            "  Interactive sessions: ask Claude to ingest the Notion page — it uses MCP (no token needed).\n"
+            "  Background/scheduled use: add NOTION_TOKEN to .env"
+        )
 
     print(f"Fetching Notion page: {page_id}")
     title, content = _notion_page_to_md(token, page_id)
@@ -863,7 +895,11 @@ def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client, n
     """Fetch all pages from a Notion database and ingest each one."""
     token = os.getenv("NOTION_TOKEN")
     if not token:
-        _die("NOTION_TOKEN not set in .env")
+        _die(
+            "NOTION_TOKEN not set.\n"
+            "  Interactive sessions: ask Claude to ingest the Notion database — it uses MCP (no token needed).\n"
+            "  Background/scheduled use: add NOTION_TOKEN to .env"
+        )
 
     db_meta = _notion_req(token, "GET", f"/databases/{db_id}")
     db_title = _notion_text(db_meta.get("title", []))
@@ -934,9 +970,12 @@ def ingest_file(path: Path, force: bool, yes: bool, client, note: str = "") -> d
     print(f"\nIngest: {source_key}")
     if note:
         print(f"  Note: {note}")
-    print(f"  ~{tokens:,} tokens | Est. cost: ${cost_est:.4f}")
+    if USE_CLI_BACKEND:
+        print(f"  ~{tokens:,} tokens | Est. cost: $0.00 (CLI/subscription)")
+    else:
+        print(f"  ~{tokens:,} tokens | Est. cost: ${cost_est:.4f}")
 
-    if cost_est > AUTO_APPROVE_THRESHOLD_USD and not yes:
+    if not USE_CLI_BACKEND and cost_est > AUTO_APPROVE_THRESHOLD_USD and not yes:
         answer = input(f"  Cost > ${AUTO_APPROVE_THRESHOLD_USD:.2f}. Proceed? [Y/n]: ").strip()
         if answer.lower() == "n":
             print("  Cancelled.")
@@ -1208,15 +1247,19 @@ def run_interactive_wizard(client):
                 break
             sources.append(("local_file", raw))
 
-    elif choice == "5":
-        raw = _prompt("\nNotion page ID or URL: ")
+    elif choice in ("5", "6"):
+        if not os.getenv("NOTION_TOKEN"):
+            kind = "page" if choice == "5" else "database"
+            print(f"\nNotion {kind} ingestion requires MCP in interactive sessions.")
+            print(f"Ask Claude directly:")
+            print(f'  "Ingest this Notion {kind}: https://notion.so/..."')
+            print(f"\nClaude will fetch it via MCP and run the extractor automatically.")
+            print(f"To use this CLI for background use, add NOTION_TOKEN to .env.")
+            return
+        raw = _prompt(f"\nNotion {'page' if choice == '5' else 'database'} ID or URL: ")
         m = _re.search(r'([a-f0-9]{32})', raw.replace('-', ''))
-        sources = [("notion", m.group(1) if m else raw.strip())]
-
-    elif choice == "6":
-        raw = _prompt("\nNotion database ID or URL: ")
-        m = _re.search(r'([a-f0-9]{32})', raw.replace('-', ''))
-        sources = [("notion_db", m.group(1) if m else raw.strip())]
+        sid = m.group(1) if m else raw.strip()
+        sources = [("notion" if choice == "5" else "notion_db", sid)]
 
     else:
         print("Invalid choice. Exiting.")
@@ -1358,8 +1401,14 @@ def main():
     parser.add_argument("--notion", metavar="PAGE_ID", help="Fetch a Notion page and ingest it")
     parser.add_argument("--notion-db", metavar="DB_ID", help="Fetch all rows from a Notion database and ingest each")
     parser.add_argument("--save", metavar="PATH", help="Save fetched content to this path (use with --drive or --notion)")
+    parser.add_argument("--use-cli", action="store_true",
+                        help="Use `claude -p` subprocess for extraction (subscription billing, no API credits needed)")
 
     args = parser.parse_args()
+
+    if args.use_cli:
+        global USE_CLI_BACKEND
+        USE_CLI_BACKEND = True
 
     if args.manifest:
         show_manifest()
