@@ -29,7 +29,17 @@ VENV_ACTIVATE="[ -f .venv/bin/activate ] && source .venv/bin/activate"
 tmux new-session -d -s "$SESSION" -n "main" -c "$VAULT"
 tmux split-window -h -t "$SESSION:main" -c "$VAULT" -p 35
 
-tmux send-keys -t "$SESSION:main.0" "$VENV_ACTIVATE && clear && echo 'Second Brain workspace ready.' && echo 'Run: claude'" Enter
+TMUX_HELP_FILE="/tmp/tmux-brain-help.txt"
+cat > "$TMUX_HELP_FILE" <<'HELP'
+─────────────────────────── tmux quick reference ───────────────────────────
+  Prefix: Ctrl+b          New window: Ctrl+b c        Kill pane: Ctrl+b x
+  Next window: Ctrl+b n   Prev window: Ctrl+b p       Split horiz: Ctrl+b "
+  Split vert: Ctrl+b %    Move panes: Ctrl+b ←→↑↓     Zoom pane: Ctrl+b z
+  Rename window: Ctrl+b , List windows: Ctrl+b w       Detach: Ctrl+b d
+  Scroll mode: Ctrl+b [   (q to exit scroll)           Copy: Space/Enter
+────────────────────────────────────────────────────────────────────────────
+HELP
+tmux send-keys -t "$SESSION:main.0" "$VENV_ACTIVATE && clear && cat $TMUX_HELP_FILE && echo '' && echo 'Second Brain workspace ready. Run: claude'" Enter
 tmux send-keys -t "$SESSION:main.1" "$VENV_ACTIVATE && clear" Enter
 
 # ── Window 1: research ───────────────────────────────────────────────────────
