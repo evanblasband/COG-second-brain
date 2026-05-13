@@ -54,9 +54,9 @@ def build_digest() -> str:
     gmail = run_query("gmail", "unread", "--limit", "5")
     sections.append(gmail if gmail.strip() else "## Email (unread)\n\n_Gmail not configured or no unread messages._\n")
 
-    # Slack mentions (query.py emits its own ## header)
-    slack = run_query("slack", "mentions", "--limit", "5")
-    sections.append(slack if slack.strip() else "## Slack Mentions\n\n_Slack not configured._\n")
+    # Slack digest: mentions + DMs + group messages + watch channels
+    slack = run_query("slack", "digest", "--limit", "5")
+    sections.append(slack if slack.strip() else "## Slack Digest\n\n_Slack not configured._\n")
 
     # Google Drive sync check (optional — skipped if config not present)
     if DRIVE_SYNC_CONFIG.exists():

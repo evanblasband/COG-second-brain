@@ -329,17 +329,12 @@ def slack_cmd(args):
     if not token:
         _die(
             "SLACK_BOT_TOKEN not set in .env\n"
-            "Add: SLACK_BOT_TOKEN=xoxb-... to your .env file\n"
-            "Slack app needs scopes: channels:history, im:history, users:read"
+            "Add: SLACK_BOT_TOKEN=xoxp-... to your .env file\n"
+            "Slack app needs scopes: channels:history, channels:read, im:history,\n"
+            "  mpim:history, groups:history, users:read, search:read"
         )
 
-    try:
-        import urllib.request
-        import urllib.parse
-    except ImportError:
-        _die("urllib not available (should be in stdlib)")
-
-    sub = getattr(args, "sub", "mentions")
+    sub = getattr(args, "sub", "digest")
     limit = getattr(args, "limit", 20)
 
     if sub == "mentions":
@@ -352,6 +347,12 @@ def slack_cmd(args):
         if not channel:
             _die("Specify --channel CHANNEL_ID_OR_NAME")
         _slack_channel(token, channel, limit, args.json)
+    elif sub == "dms":
+        _slack_dms(token, limit, args.json)
+    elif sub == "groups":
+        _slack_groups(token, limit, args.json)
+    elif sub == "digest":
+        _slack_digest(token, limit, args.json)
     else:
         _die(f"Unknown slack subcommand: {sub}")
 
@@ -369,9 +370,22 @@ def _slack_api(token: str, endpoint: str, params: dict) -> dict:
     return data
 
 
+def _slack_api_soft(token: str, endpoint: str, params: dict) -> dict:
+    """Like _slack_api but returns empty dict on error instead of dying."""
+    try:
+        return _slack_api(token, endpoint, params)
+    except SystemExit:
+        return {}
+
+
 def _slack_my_id(token: str) -> str:
     data = _slack_api(token, "auth.test", {})
     return data.get("user_id", "")
+
+
+def _slack_resolve_user(token: str, user_id: str) -> str:
+    data = _slack_api_soft(token, "users.info", {"user": user_id})
+    return data.get("user", {}).get("real_name", user_id)
 
 
 def _slack_search(token: str, query: str, limit: int, as_json: bool):
@@ -387,6 +401,92 @@ def _slack_channel(token: str, channel: str, limit: int, as_json: bool):
     _slack_format(items, f"Slack Channel: {channel}", as_json)
 
 
+def _slack_dms(token: str, limit: int, as_json: bool):
+    """Fetch recent messages from all DM (im) conversations."""
+    data = _slack_api_soft(token, "conversations.list", {"types": "im", "limit": 100})
+    channels = data.get("channels", [])
+    all_items = []
+    for ch in channels[:15]:
+        ch_id = ch.get("id", "")
+        user_id = ch.get("user", "")
+        label = _slack_resolve_user(token, user_id) if user_id else ch_id
+        msgs = _slack_api_soft(token, "conversations.history", {"channel": ch_id, "limit": limit})
+        for m in msgs.get("messages", []):
+            all_items.append({**m, "_label": f"DM: {label}"})
+    _slack_format_digest(all_items, "Slack Direct Messages", as_json)
+
+
+def _slack_groups(token: str, limit: int, as_json: bool):
+    """Fetch recent messages from group DM (mpim) conversations."""
+    data = _slack_api_soft(token, "conversations.list", {"types": "mpim", "limit": 100})
+    channels = data.get("channels", [])
+    all_items = []
+    for ch in channels[:15]:
+        ch_id = ch.get("id", "")
+        ch_name = ch.get("name", ch_id)
+        msgs = _slack_api_soft(token, "conversations.history", {"channel": ch_id, "limit": limit})
+        for m in msgs.get("messages", []):
+            all_items.append({**m, "_label": f"Group: {ch_name}"})
+    _slack_format_digest(all_items, "Slack Group Messages", as_json)
+
+
+def _slack_digest(token: str, limit: int, as_json: bool):
+    """Combined digest: mentions + DMs + group messages + SLACK_WATCH_CHANNELS."""
+    my_id = _slack_my_id(token)
+    sections: list[tuple[str, list]] = []
+
+    # Mentions
+    m_data = _slack_api_soft(token, "search.messages", {"query": f"<@{my_id}>", "count": limit})
+    mentions = m_data.get("messages", {}).get("matches", [])
+    if mentions:
+        sections.append(("Mentions", mentions))
+
+    # DMs
+    dm_data = _slack_api_soft(token, "conversations.list", {"types": "im", "limit": 100})
+    dm_items = []
+    for ch in dm_data.get("channels", [])[:15]:
+        ch_id = ch.get("id", "")
+        user_id = ch.get("user", "")
+        label = _slack_resolve_user(token, user_id) if user_id else ch_id
+        msgs = _slack_api_soft(token, "conversations.history", {"channel": ch_id, "limit": 5})
+        for m in msgs.get("messages", []):
+            dm_items.append({**m, "_label": f"DM: {label}"})
+    if dm_items:
+        sections.append(("Direct Messages", dm_items))
+
+    # Group messages (mpim)
+    grp_data = _slack_api_soft(token, "conversations.list", {"types": "mpim", "limit": 100})
+    grp_items = []
+    for ch in grp_data.get("channels", [])[:15]:
+        ch_id = ch.get("id", "")
+        ch_name = ch.get("name", ch_id)
+        msgs = _slack_api_soft(token, "conversations.history", {"channel": ch_id, "limit": 5})
+        for m in msgs.get("messages", []):
+            grp_items.append({**m, "_label": f"Group: {ch_name}"})
+    if grp_items:
+        sections.append(("Group Messages", grp_items))
+
+    # Designated watch channels (SLACK_WATCH_CHANNELS=C123,C456 in .env)
+    watch_raw = os.getenv("SLACK_WATCH_CHANNELS", "")
+    watch_channels = [c.strip() for c in watch_raw.split(",") if c.strip()]
+    for ch_id in watch_channels:
+        msgs = _slack_api_soft(token, "conversations.history", {"channel": ch_id, "limit": limit})
+        items = [{**m, "_label": ch_id} for m in msgs.get("messages", [])]
+        if items:
+            sections.append((f"Channel: {ch_id}", items))
+
+    if as_json:
+        print(json.dumps({name: items for name, items in sections}, indent=2))
+        return
+
+    if not sections:
+        print("## Slack Digest\n\n_No messages found._\n")
+        return
+
+    for section_name, items in sections:
+        _slack_format_digest(items, f"Slack: {section_name}", as_json=False)
+
+
 def _slack_format(items: list, title: str, as_json: bool):
     if not items:
         print(f"## {title}\n\n_No messages found._\n")
@@ -399,6 +499,27 @@ def _slack_format(items: list, title: str, as_json: bool):
         text = item.get("text", item.get("snippet", {}).get("text", ""))
         ts = item.get("ts", item.get("permalink", ""))
         lines.append(f"- {text[:300]}")
+        if ts:
+            lines.append(f"  _(ts: {ts})_")
+        lines.append("")
+    print("\n".join(lines))
+
+
+def _slack_format_digest(items: list, title: str, as_json: bool):
+    """Format items that have a _label field (from dms/groups/digest commands)."""
+    if not items:
+        print(f"## {title}\n\n_No messages found._\n")
+        return
+    if as_json:
+        print(json.dumps(items, indent=2))
+        return
+    lines = [f"## {title}\n"]
+    for item in items:
+        label = item.get("_label", "")
+        text = item.get("text", item.get("snippet", {}).get("text", ""))
+        ts = item.get("ts", item.get("permalink", ""))
+        prefix = f"[{label}] " if label else ""
+        lines.append(f"- {prefix}{text[:300]}")
         if ts:
             lines.append(f"  _(ts: {ts})_")
         lines.append("")
@@ -943,7 +1064,12 @@ def build_parser():
 
     # slack
     sl = sub.add_parser("slack", help="Slack queries (requires SLACK_BOT_TOKEN in .env)")
-    sl.add_argument("sub", nargs="?", default="mentions", choices=["mentions", "search", "channel"])
+    sl.add_argument(
+        "sub", nargs="?", default="digest",
+        choices=["digest", "mentions", "dms", "groups", "search", "channel"],
+        help="digest=all sources (default), mentions=@mentions, dms=direct messages, "
+             "groups=group chats, search=text search, channel=specific channel",
+    )
     sl.add_argument("--query", help="Search query (for 'search' subcommand)")
     sl.add_argument("--channel", help="Channel ID or name (for 'channel' subcommand)")
     sl.add_argument("--limit", type=int, default=20)
