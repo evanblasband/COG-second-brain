@@ -32,7 +32,7 @@ This document defines the available commands/skills for AI agents interacting wi
 8. Creates `00-inbox/MY-PROFILE.md` with role_pack, agent_mode, and preferences
 9. Creates `00-inbox/MY-INTERESTS.md` with topics for daily briefs
 10. Creates `00-inbox/MY-INTEGRATIONS.md` with active/disabled integrations
-11. Optionally creates project structures in `04-projects/` and `03-professional/COMPETITIVE-WATCHLIST.md` (only if mentioned)
+11. Optionally creates project structures in `03-projects/` (only if mentioned)
 12. Generates a welcome guide with role-ordered skills and integration status
 
 **Agent modes:**
@@ -68,10 +68,9 @@ This document defines the available commands/skills for AI agents interacting wi
 6. Saves structured output to appropriate domain folder
 
 **Output locations:**
-- Personal: `02-personal/braindumps/`
-- Professional: `03-professional/braindumps/`
-- Project: `04-projects/[project-slug]/braindumps/`
-- Mixed: `00-inbox/`
+- Work braindumps: `AI/research/braindump-YYYY-MM-DD.md`
+- Project: `03-projects/[project-slug]/braindumps/`
+- Mixed/uncategorized: `00-inbox/`
 
 ---
 
@@ -164,10 +163,9 @@ This document defines the available commands/skills for AI agents interacting wi
 7. Marks processed braindumps as consolidated
 
 **Output locations:**
-- Frameworks: `05-knowledge/consolidated/[framework-name]-framework.md`
-- Patterns: `05-knowledge/patterns/pattern-[name].md`
-- Timeline: `05-knowledge/timeline/[topic]-evolution-YYYY-MM.md`
-- Reports: `05-knowledge/consolidated/consolidation-YYYY-MM-DD.md`
+- Frameworks: `04-knowledge/consolidated/[framework-name]-framework.md`
+- Patterns: `04-knowledge/patterns/pattern-[name].md`
+- Reports: `04-knowledge/consolidated/consolidation-YYYY-MM-DD.md`
 
 ---
 
@@ -204,8 +202,8 @@ This document defines the available commands/skills for AI agents interacting wi
 - Project-Specific
 
 **Output locations:**
-- Standard: `05-knowledge/booklets/[category]/[title-slug]-YYYY-MM-DD.md`
-- Project-specific: `04-projects/[project-slug]/resources/`
+- Standard: `04-knowledge/booklets/[category]/[title-slug]-YYYY-MM-DD.md`
+- Project-specific: `03-projects/[project-slug]/resources/`
 - Unclear: `00-inbox/`
 
 ---
@@ -230,7 +228,7 @@ This document defines the available commands/skills for AI agents interacting wi
 4. Writes initiative status updates and issue/project sync-backs into Linear where appropriate
 5. Produces a concise brief with a Linear sync report
 
-**Output location:** `03-professional/team-briefs/team-brief-YYYY-MM-DD.md`
+**Output location:** `AI/drafts/team-brief-{name}-YYYY-MM-DD.md`
 
 ---
 
@@ -253,7 +251,8 @@ This document defines the available commands/skills for AI agents interacting wi
 3. Highlights stakeholder concerns, alignment, and follow-up needs
 4. Formats the result into a reusable meeting note
 
-**Output location:** `03-professional/meetings/meeting-transcript-YYYY-MM-DD-[slug].md`
+**Output location:** `AI/sessions/meeting-YYYY-MM-DD-[slug].md`  
+**People CRM:** After processing, ingest the output file to trigger automatic CRM profile updates for identified speakers and attendees.
 
 ---
 
@@ -276,7 +275,7 @@ This document defines the available commands/skills for AI agents interacting wi
 3. Surfaces trends, risks, opportunities, and recommended actions
 4. Produces an executive-ready synthesis with confidence levels and open questions
 
-**Output location:** `03-professional/analysis/comprehensive-analysis-YYYY-MM-DD.md`
+**Output location:** `AI/research/comprehensive-analysis-YYYY-MM-DD.md`
 
 ---
 
@@ -335,7 +334,7 @@ This document defines the available commands/skills for AI agents interacting wi
 ./cog-update.sh --force   # Update all without prompting
 ```
 
-**Safety:** Content folders (`00-inbox/`, `01-daily/`, `02-personal/`, etc.) are NEVER touched. Only framework files (skills, docs, scripts) are updated.
+**Safety:** Content folders (`00-inbox/`, `01-daily/`, `02-people/`, `03-projects/`, `04-knowledge/`, `05-decisions/`, `06-mistakes/`, `07-resources/`, `AI/`, `graph/`) are NEVER touched. Only framework files (skills, docs, scripts) are updated.
 
 ---
 
@@ -360,42 +359,13 @@ This document defines the available commands/skills for AI agents interacting wi
 5. Synthesizes all threads into a unified strategic analysis with scenarios, options, and recommendations
 6. Saves to vault with executive summary
 
-**Output location:** `05-knowledge/research/YYYY-MM-DD-[slug].md`
+**Output location:** `AI/research/YYYY-MM-DD-[slug].md`
 
 **Key features:**
 - No hallucinated sources — every claim traces to real web search results
 - Emerging tech thread always included — surfaces pre-mainstream concepts
 - Contrarian view section challenges consensus
 - Confidence levels and gaps explicitly stated
-
----
-
-### PM Workflow Skills
-
-The following 6 skills form a complete product management lifecycle:
-**Research** → **PRD** → **Stories** → Development → **Release Notes** → **Knowledge Base**
-
-### /create-user-story
-
-**Description:** Create user stories with duplicate checking across Linear, GitHub Issues, or Jira.
-
-**Triggers:**
-- `/create-user-story`
-- "create a user story"
-- "create a story for"
-- "new user story"
-
-**Purpose:** Create well-structured user stories in your project tracker with automatic duplicate detection, standard As a/I want/So that format, and Given/When/Then acceptance criteria.
-
-**What it does:**
-1. Accepts problem statement and solution from user
-2. Checks active integrations (Linear, GitHub, Jira) in `00-inbox/MY-INTEGRATIONS.md`
-3. Searches for potential duplicate issues in the active tracker
-4. If duplicates found, stops and shows candidates
-5. If no duplicates, creates story with user story format and acceptance criteria
-6. Saves a copy to `04-projects/[project]/stories/`
-
-**Output:** Issue created in active tracker + local copy in vault
 
 ---
 
@@ -413,82 +383,136 @@ The following 6 skills form a complete product management lifecycle:
 
 **What it does:**
 1. Collects problem statement, goals, user context from user
-2. Reads existing project context from `04-projects/` and `05-knowledge/`
+2. Reads existing project context from `03-projects/` and `04-knowledge/`
 3. Drafts PRD with standard sections (Problem, Goals, Non-goals, User workflows, Functional requirements, Iterations, Dependencies, Risks, Success metrics)
-4. Saves to `04-projects/[project]/PRDs/PRD-[slug].md`
+4. Saves to `AI/drafts/prd-[slug]-YYYY-MM-DD.md`
 5. Presents summary and asks for explicit approval before any publishing
-6. Only publishes to Confluence/Notion if user explicitly approves
+6. Only publishes to external systems if user explicitly approves
 
-**Output location:** `04-projects/[project]/PRDs/PRD-[slug].md`
-
----
-
-### /generate-release-notes
-
-**Description:** Generate release notes from GitHub milestones, Linear cycles, or manual input.
-
-**Triggers:**
-- `/generate-release-notes`
-- "generate release notes"
-- "release notes for"
-- "what shipped in"
-
-**Purpose:** Compile release notes by pulling completed issues/PRs from your tracker, categorizing into enhancements, improvements, and bug fixes.
-
-**What it does:**
-1. Identifies release scope (GitHub milestone, Linear cycle, or manual list)
-2. Fetches all completed issues/PRs in the release
-3. Categorizes into Enhancements, Technical Improvements, Bug Fixes
-4. Generates formatted release notes markdown
-5. Saves to `04-projects/[project]/releases/`
-6. Optionally publishes to Confluence with approval
-
-**Output location:** `04-projects/[project]/releases/release-notes-[version]-YYYY-MM-DD.md`
+**Output location:** `AI/drafts/prd-[slug]-YYYY-MM-DD.md`
 
 ---
 
-### /export-open-issues
+### /decide
 
-**Description:** Audit and export open issues from any project tracker.
+**Description:** Log a decision with rationale, alternatives, and confidence level.
 
 **Triggers:**
-- `/export-open-issues`
-- "export open issues"
-- "issue audit"
-- "open issues report"
+- `/decide`
+- "log this decision"
+- "decision record"
 
-**Purpose:** Generate a structured audit of all open issues from your active tracker for review, grooming, or stakeholder reporting.
+**Purpose:** Capture architectural, strategic, or technical decisions the moment they're made. Creates a permanent, searchable record so future sessions understand why choices were made.
 
-**What it does:**
-1. Checks active integrations for available trackers
-2. Fetches all open issues with metadata (assignee, priority, labels, dates)
-3. Generates summary statistics and categorized breakdown
-4. Identifies stale issues, unassigned work, and priority imbalances
-5. Saves structured report to vault
-
-**Output location:** `04-projects/[project]/audits/open-issues-YYYY-MM-DD.md`
+**Output location:** `05-decisions/YYYY-MM-DD-{slug}.md`
 
 ---
 
-### /publish-to-confluence
+### /mistake
 
-**Description:** Publish any vault markdown file to Confluence.
+**Description:** Log an error or wrong assumption with root cause analysis and a prevention rule.
 
 **Triggers:**
-- `/publish-to-confluence`
-- "publish to Confluence"
-- "push to Confluence"
+- `/mistake`
+- "log this mistake"
+- "record this error"
 
-**Purpose:** Publish a local markdown file from the vault to a Confluence page (create or update), with explicit approval before publishing.
+**Purpose:** Capture mistakes immediately after discovery. Extracts root cause and generates a prevention rule. Saved to `06-mistakes/` and surfaced in future sessions.
 
-**What it does:**
-1. Accepts path to local markdown file
-2. Requires Confluence integration to be active
-3. Converts markdown to Confluence-compatible format
-4. Creates new page or updates existing page
-5. Returns published page URL
+**Output location:** `06-mistakes/YYYY-MM-DD-{slug}.md`
 
-**Requires:** Confluence integration active in `00-inbox/MY-INTEGRATIONS.md`
+---
+
+### /eval
+
+**Description:** Structured technology evaluation using a TRL-based framework.
+
+**Triggers:**
+- `/eval`
+- "evaluate [technology]"
+- "compare [option A] vs [option B]"
+
+**Purpose:** Score technology choices across 8 dimensions: maturity, integration complexity, regulatory exposure, vendor stability, LOE estimate, strategic risk, privacy/security fit, cost trajectory. Produces a scored comparison and recommendation.
+
+**Output location:** `AI/evaluations/YYYY-MM-DD-{tech}.md` + entry in `04-knowledge/technologies/`
+
+---
+
+### /ingest
+
+**Description:** Feed a document into the knowledge graph.
+
+**Triggers:**
+- `/ingest [path]`
+- "ingest this document"
+- "add to the graph"
+
+**Purpose:** Extract entities from any document, merge into `graph/graph.json`, and automatically update People CRM profiles if the document is a meeting record.
+
+**Pipeline:** Hash check → entity extraction (Haiku) → graph merge → CRM auto-update (if meeting)  
+**Output:** Updates `graph/graph.json` and `graph/ingest_manifest.json`
+
+---
+
+### /prep
+
+**Description:** Pre-meeting briefing for an attendee.
+
+**Triggers:**
+- `/prep [person name or meeting title]`
+- "prep for meeting with [name]"
+
+**Purpose:** Load the attendee's CRM profile, relationship history, and open items. Generate talking points and a suggested agenda. Run 15–30 minutes before any meeting.
+
+**Input:** `02-people/{name}.md`, `OPEN_LOOPS.md`, Google Calendar  
+**Output location:** `AI/drafts/prep-{name}-YYYY-MM-DD.md`
+
+---
+
+### /daily-plan
+
+**Description:** Morning operational planning session.
+
+**Triggers:**
+- `/daily-plan`
+- "what's my day look like"
+- "morning plan"
+
+**Purpose:** Pull today's calendar, look up attendees in the CRM, surface open loops, and produce 3 prioritized actions. Run first thing every working day.
+
+**Input:** Google Calendar (MCP), `OPEN_LOOPS.md`, `02-people/`  
+**Output location:** `01-daily/briefs/YYYY-MM-DD.md`
+
+---
+
+### /compress
+
+**Description:** Archive old session logs and clean resolved items from OPEN_LOOPS.md.
+
+**Triggers:**
+- `/compress`
+- "clean up context"
+- "archive old sessions"
+
+**Purpose:** Keep the vault lean. Archives sessions older than 14 days, generates rolling summaries, and prompts review of old open loops. Run weekly (Fridays) or when context feels heavy.
+
+**Output:** Archives to `AI/sessions/archive/`, rolling summaries to `AI/sessions/rolling/`
+
+---
+
+### /playbook
+
+**Description:** First-30-days gap analysis.
+
+**Triggers:**
+- `/playbook`
+- "what are my knowledge gaps"
+- "onboarding gap analysis"
+
+**Purpose:** Read the knowledge graph and people CRM to identify top knowledge gaps and recommend which person to talk to for each. Run on day one, then weekly.
+
+**Input:** `graph/graph.json`, `02-people/`, `OPEN_LOOPS.md`  
+**Output location:** `AI/drafts/playbook-YYYY-MM-DD.md`
 
 ---
 
@@ -502,16 +526,16 @@ The following 6 skills form a complete product management lifecycle:
 - "update KB"
 - "sync knowledge base"
 
-**Purpose:** Keep your product knowledge base in `05-knowledge/` current by incorporating release data, feature updates, and project changes.
+**Purpose:** Keep your knowledge base in `04-knowledge/` current by incorporating new research, feature updates, and project changes.
 
 **What it does:**
-1. Reads current knowledge base files from `05-knowledge/`
-2. Accepts feature updates and/or release version as input
-3. Cross-references with project PRDs and release notes in `04-projects/`
+1. Reads current knowledge base files from `04-knowledge/`
+2. Accepts feature updates and/or new information as input
+3. Cross-references with project notes in `03-projects/`
 4. Updates knowledge base with factual, thorough changes
 5. Optionally syncs to external wiki (Confluence/Notion) with approval
 
-**Output location:** `05-knowledge/consolidated/product-knowledge-base.md`
+**Output location:** `04-knowledge/consolidated/`
 
 ---
 
@@ -534,7 +558,7 @@ COG includes 6 specialized worker agents (`.claude/agents/`) that handle data-he
 
 ## People CRM
 
-COG tracks the people you work with using progressive, evidence-based profiles stored in `05-knowledge/people/`.
+COG tracks the people you work with using progressive, evidence-based profiles stored in `02-people/`.
 
 **Profile structure:** Each person has a two-layer file:
 1. **Compiled Truth** (top) — current best understanding, updated as evidence changes
@@ -548,7 +572,7 @@ COG tracks the people you work with using progressive, evidence-based profiles s
 **Citation format:** Every observation must include:
 `[Source: [[path/to/source-note]] | YYYY-MM-DD | confidence: high|medium|low]`
 
-Create profiles manually using the template at `06-templates/people-profile-template.md` or run the `brief-people-updater` agent for batch updates.
+Create profiles manually using the template at `templates/people-profile-template.md`, or ingest a meeting document — `ingest.py` automatically calls `people_updater.py` to create/update profiles when confidence ≥ medium. Run the `brief-people-updater` agent for manual batch updates.
 
 ---
 
@@ -558,31 +582,49 @@ Create profiles manually using the template at `06-templates/people-profile-temp
 COG-second-brain/
 ├── .claude/agents/        # Worker agent definitions (6)
 ├── .claude/roles/         # Role packs for personalized recommendations
+├── .claude/skills/        # Skill definitions (22 skills)
+├── .claude/hooks/         # Automation hooks (session-start, session-end, etc.)
 ├── 00-inbox/              # Landing zone, profile files
 │   ├── MY-PROFILE.md      # User profile with role pack (created by onboarding)
 │   ├── MY-INTERESTS.md    # User interests (created by onboarding)
 │   └── MY-INTEGRATIONS.md # Active/disabled integrations (created by onboarding)
 ├── 01-daily/              # Daily content
-│   ├── briefs/            # Daily intelligence briefs
-│   └── checkins/          # Weekly check-ins
-├── 02-personal/           # Personal domain
-│   └── braindumps/        # Personal braindumps
-├── 03-professional/       # Professional domain
-│   ├── braindumps/        # Work-related braindumps
-│   └── COMPETITIVE-WATCHLIST.md
-├── 04-projects/           # Project-specific content
-│   └── [project-slug]/
-│       ├── PROJECT-OVERVIEW.md
-│       ├── braindumps/
-│       ├── competitive/
-│       └── resources/
-├── 05-knowledge/          # Consolidated knowledge
-│   ├── consolidated/      # Frameworks and reports
+│   ├── briefs/            # Daily plan + intelligence briefs
+│   └── checkins/          # End-of-day and weekly check-ins
+├── 02-people/             # People CRM — one file per person
+├── 03-projects/           # Active and archived projects
+├── 04-knowledge/          # Domain knowledge, tech evals, research
+│   ├── consolidated/      # Frameworks and synthesized reports
 │   ├── patterns/          # Identified patterns
-│   ├── people/            # People CRM profiles
-│   ├── timeline/          # Thinking evolution
+│   ├── technologies/      # Tech evals, protocols, architecture notes
+│   ├── regulations/       # HIPAA, FCC, state privacy laws
+│   ├── competitors/       # Competitive landscape
 │   └── booklets/          # URL bookmarks by category
-└── 06-templates/          # Document templates (incl. people profile)
+├── 05-decisions/          # Decision log (append-only)
+├── 06-mistakes/           # Error log with prevention rules
+├── 07-resources/          # User guide, system library, reference docs
+├── AI/                    # All agent outputs
+│   ├── sessions/          # Session summaries and heartbeat digests
+│   │   ├── archive/       # Archived sessions (>14 days, moved by /compress)
+│   │   └── rolling/       # Consolidated rolling summaries (every 5 sessions)
+│   ├── research/          # Research agent outputs
+│   ├── evaluations/       # /eval outputs
+│   └── drafts/            # Document drafts
+├── graph/                 # Knowledge graph
+│   ├── graph.json         # Entity graph
+│   ├── ingest_manifest.json
+│   └── conflicts.json     # Entity type conflicts flagged for review
+├── scripts/               # Python + shell tools
+│   ├── ingest.py          # Knowledge graph ingest (+ CRM auto-update)
+│   ├── people_updater.py  # CRM auto-update from meeting documents
+│   ├── query.py           # Calendar, Gmail, Drive, Slack, GitHub CLI
+│   ├── heartbeat.py       # Background digest agent
+│   ├── janitor.py         # Context janitor + rolling summaries
+│   ├── drive_sync.py      # Google Drive folder sync
+│   └── cost_report.py     # Session cost reporting
+├── templates/             # Document templates (people profile, meeting note, etc.)
+├── config/config.yaml     # System configuration (no secrets)
+└── setup.sh               # One-command machine setup
 ```
 
 ---
@@ -590,16 +632,19 @@ COG-second-brain/
 ## Quick Start
 
 1. **New user?** Run `/onboarding` first to set up your profile
-2. **Capture thoughts?** Use `/braindump` anytime
-3. **Morning routine?** Run `/daily-brief` for your intelligence briefing
-4. **End of week?** Use `/weekly-checkin` to reflect
-5. **Save a link?** Use `/url-dump` with the URL
-6. **Evaluate a tool?** Use `/scout` to check relevance before saving
-7. **Build knowledge?** Run `/knowledge-consolidation` periodically
-8. **Create user stories?** Use `/create-user-story` with a problem/solution
-9. **Draft a PRD?** Use `/generate-prd` with your problem context
-10. **Release notes?** Use `/generate-release-notes` with a version
-11. **Strategic research?** Use `/auto-research` with your question
+2. **Morning routine?** Run `/daily-plan` first, then `/daily-brief` for news
+3. **Before any meeting?** Run `/prep [person or meeting title]`
+4. **Process meeting notes?** Use `/meeting-transcript [path]`
+5. **Log a decision?** Use `/decide` immediately after making it
+6. **Log a mistake?** Use `/mistake` while context is fresh
+7. **Ingest a document?** Use `/ingest [path]`
+8. **Capture thoughts?** Use `/braindump` anytime
+9. **Evaluate a technology?** Use `/eval`
+10. **Strategic research?** Use `/auto-research` with your question
+11. **Save a link?** Use `/url-dump` with the URL
+12. **Build knowledge frameworks?** Run `/knowledge-consolidation`
+13. **End of week?** Use `/compress` then `/weekly-checkin`
+14. **30-day gap analysis?** Use `/playbook`
 
 ---
 
@@ -609,7 +654,7 @@ All configuration is stored as readable markdown files:
 - `00-inbox/MY-PROFILE.md` - Profile, role pack, agent mode, and active projects
 - `00-inbox/MY-INTERESTS.md` - Topics for news curation
 - `00-inbox/MY-INTEGRATIONS.md` - Active/disabled external service integrations
-- `03-professional/COMPETITIVE-WATCHLIST.md` - Companies/people to track
+- `04-knowledge/competitors/` - Competitive landscape notes
 
 Edit these files anytime - changes take effect immediately.
 
