@@ -419,6 +419,7 @@ _DRIVE_EXPORT_MIMES = {
 }
 
 _PDF_MIME = "application/pdf"
+_DRAWIO_MIME = "application/vnd.jgraph.mxgraph"
 _DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 
 
@@ -435,6 +436,49 @@ def _extract_pdf_text(data: bytes) -> str:
         if text.strip():
             pages.append(text)
     return "\n\n".join(pages)
+
+
+def _extract_drawio_text(xml_content: str) -> str:
+    """Extract human-readable text from a .drawio (mxGraph XML) file."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_content)
+    except ET.ParseError:
+        return xml_content  # malformed — pass raw XML to extractor
+
+    id_to_label: dict[str, str] = {}
+    nodes: list[str] = []
+    edges: list[tuple[str, str, str]] = []
+
+    for cell in root.iter("mxCell"):
+        cell_id = cell.get("id", "")
+        value = cell.get("value", "").strip()
+        tooltip = cell.get("tooltip", "").strip()
+        is_edge = cell.get("edge") == "1"
+        source_id = cell.get("source", "")
+        target_id = cell.get("target", "")
+
+        if value:
+            id_to_label[cell_id] = value
+
+        if is_edge:
+            edges.append((source_id, target_id, value))
+        elif value:
+            nodes.append(f"{value} — {tooltip}" if tooltip else value)
+
+    parts: list[str] = []
+    if nodes:
+        parts.append("Elements:\n" + "\n".join(f"- {n}" for n in nodes))
+    if edges:
+        edge_lines = []
+        for src, tgt, label in edges:
+            src_name = id_to_label.get(src, src)
+            tgt_name = id_to_label.get(tgt, tgt)
+            edge_lines.append(f"- {src_name} --[{label}]--> {tgt_name}" if label
+                               else f"- {src_name} --> {tgt_name}")
+        parts.append("Connections:\n" + "\n".join(edge_lines))
+
+    return "\n\n".join(parts) if parts else "(empty diagram)"
 
 
 _GOOGLE_SCOPES = [
@@ -472,7 +516,7 @@ def _build_drive_service():
     return build("drive", "v3", credentials=_get_google_creds())
 
 
-def _fetch_drive_file_text(service, file_id: str, mime: str) -> str | None:
+def _fetch_drive_file_text(service, file_id: str, mime: str, name: str = "") -> str | None:
     """Download one Drive file and return plain text, or None if unsupported."""
     export_mime = _DRIVE_EXPORT_MIMES.get(mime)
     if export_mime:
@@ -495,6 +539,10 @@ def _fetch_drive_file_text(service, file_id: str, mime: str) -> str | None:
             print("  Warning: PDF yielded no extractable text (may be scanned/image-only).")
         return text
 
+    if mime == _DRAWIO_MIME or name.lower().endswith(".drawio"):
+        print("  Extracting text from diagram...")
+        return _extract_drawio_text(raw.decode("utf-8", errors="replace"))
+
     return None  # unsupported binary type
 
 
@@ -506,9 +554,9 @@ def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, no
     mime = meta.get("mimeType", "")
 
     print(f"Fetching Drive file: {name}")
-    text = _fetch_drive_file_text(service, file_id, mime)
+    text = _fetch_drive_file_text(service, file_id, mime, name=name)
     if text is None:
-        _die(f"Unsupported file type: {mime}. Supported: Google Docs/Sheets/Slides, PDF.")
+        _die(f"Unsupported file type: {mime}. Supported: Google Docs/Sheets/Slides, PDF, .drawio.")
 
     if save_path is None:
         safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
@@ -601,14 +649,15 @@ def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
                 stats["filtered"] += 1
                 continue
 
-            if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME:
+            is_drawio = fmime == _DRAWIO_MIME or fname.lower().endswith(".drawio")
+            if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME and not is_drawio:
                 stats["unsupported"] += 1
                 stats["unsupported_names"].append(fname)
                 continue
 
             print(f"\nFile: {fname}")
             try:
-                text = _fetch_drive_file_text(service, fid, fmime)
+                text = _fetch_drive_file_text(service, fid, fmime, name=fname)
                 if text is None:
                     stats["unsupported"] += 1
                     stats["unsupported_names"].append(fname)
@@ -861,6 +910,8 @@ def ingest_file(path: Path, force: bool, yes: bool, client, note: str = "") -> d
     """
     try:
         content = path.read_text(encoding="utf-8")
+        if path.suffix.lower() == ".drawio":
+            content = f"[Source: {path.name} — diagram]\n\n{_extract_drawio_text(content)}"
     except Exception as e:
         _log_error(path, str(e))
         print(f"  ✗ Read error: {e}")
@@ -958,7 +1009,10 @@ def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client,
     name_contains = (filters.get("name_contains") or "").lower()
     exclude_name = (filters.get("exclude_name") or "").lower()
 
-    files = sorted(root.rglob(pattern))
+    all_files: list[Path] = []
+    for pat in (pattern, "*.drawio"):
+        all_files.extend(root.rglob(pat))
+    files = sorted(set(all_files))
     md_files = [
         f for f in files
         if f.is_file()
