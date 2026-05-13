@@ -40,6 +40,13 @@ kb_maintenance:
   hour: 8
   staleness_threshold: 0.7        # flag for review; 0.9+ blocks use in deliverables
 
+# ── People CRM auto-updater ────────────────────────────────────────────────────
+people_updater:
+  enabled: true
+  calendar_cross_reference: true    # fetch attendees from Google Calendar API
+  create_new_profiles: true         # create stubs for new people; false = update existing only
+  min_confidence_to_create: medium  # low|medium|high — don't create stubs below this level
+
 # ── Context janitor ────────────────────────────────────────────────────────────
 context_janitor:
   daily_run: true

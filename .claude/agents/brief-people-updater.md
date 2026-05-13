@@ -7,9 +7,9 @@ model: sonnet
 You are a people profile updater. You receive a list of new observations about team members and update their profiles.
 
 ## Instructions
-1. For each person in the provided list, check if `05-knowledge/people/<firstname-lastname>.md` exists
+1. For each person in the provided list, check if `02-people/<firstname-lastname>.md` exists
 2. If exists: read the file, append new observations under the appropriate section in the Timeline
-3. If not exists: create a new profile using the template in `06-templates/people-profile-template.md`
+3. If not exists: create a new profile using the structure in `scripts/people_updater.py:create_stub_profile`
 4. Never overwrite existing content — only append or update specific fields
 
 ## What to update

@@ -402,6 +402,23 @@ _DRIVE_EXPORT_MIMES = {
     "application/vnd.google-apps.presentation": "text/plain",
 }
 
+_PDF_MIME = "application/pdf"
+
+
+def _extract_pdf_text(data: bytes) -> str:
+    try:
+        import io as _io
+        from pypdf import PdfReader
+    except ImportError:
+        raise SystemExit("pypdf not installed. Run: pip install -r requirements.txt")
+    reader = PdfReader(_io.BytesIO(data))
+    pages = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        if text.strip():
+            pages.append(text)
+    return "\n\n".join(pages)
+
 _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -458,7 +475,14 @@ def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, no
         done = False
         while not done:
             _, done = downloader.next_chunk()
-        text = buf.getvalue().decode("utf-8", errors="replace")
+        raw = buf.getvalue()
+        if mime == _PDF_MIME:
+            print("  Extracting text from PDF...")
+            text = _extract_pdf_text(raw)
+            if not text.strip():
+                print("  Warning: PDF yielded no extractable text (may be scanned/image-only).")
+        else:
+            text = raw.decode("utf-8", errors="replace")
 
     if save_path is None:
         safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
@@ -765,6 +789,9 @@ def ingest_file(path: Path, force: bool, yes: bool, client, note: str = "") -> d
 
     save_graph(graph)
 
+    # Auto-update people CRM if this looks like a meeting document
+    _maybe_update_people(path, content, source_key)
+
     # Update manifest
     entry = {
         "hash": content_hash,
@@ -864,6 +891,23 @@ def show_stats():
             rel_counts[r["type"]] = rel_counts.get(r["type"], 0) + 1
         for t, count in sorted(rel_counts.items(), key=lambda x: -x[1]):
             print(f"  {t:<25} {count}")
+
+
+# ─── People CRM update ─────────────────────────────────────────────────────────
+
+def _maybe_update_people(path: Path, content: str, source_key: str):
+    """Post-ingest: if the document is a meeting doc, auto-update 02-people/."""
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from people_updater import update_from_meeting
+        result = update_from_meeting(path, content, source_key)
+        if result.get("created") or result.get("updated"):
+            c, u = result.get("created", 0), result.get("updated", 0)
+            print(f"  👥 People CRM: {c} created, {u} updated")
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"  ⚠️  People CRM update failed: {e}")
 
 
 # ─── Hook utilities ────────────────────────────────────────────────────────────

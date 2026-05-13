@@ -16,6 +16,9 @@ pyyaml>=6.0.0
 beautifulsoup4>=4.12.0
 # markdownify>=0.11.0  # optional: convert HTML to markdown (add if needed)
 
+# PDF extraction (ingest --drive with PDF files)
+pypdf>=4.0.0
+
 # Future: vector search / hybrid RAG (Week 2+)
 # fastembed>=0.3.0
 # sqlite-utils>=3.35.0
