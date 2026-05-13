@@ -35,30 +35,14 @@ source: agent-generated
 ## Files modified
 
 EOF
+fi
 
-  # Prompt Claude to complete the session-end protocol.
-  # This output is injected back into the conversation — Claude must act on it.
-  cat <<PROMPT
-
-=== SESSION END PROTOCOL — ACTION REQUIRED ===
-
-The session is ending. Complete the following before closing:
-
-1. **Fill in AI/sessions/$TIMESTAMP.md** — summarize what was worked on, decisions
-   made, knowledge updates, open loops opened/closed, and files modified.
-
-2. **Update MEMORY.md** — append any cross-session learnings to the relevant section:
-   - Key Decisions: new architectural choices or tool selections
-   - Patterns Learned: recurring observations
-   - Domain Knowledge Updates: significant new facts ingested
-   - Lessons from Mistakes: prevention rules extracted
-
-3. **Update OPEN_LOOPS.md** — mark resolved items ✅ DONE, add any new
-   unresolved questions or waiting-fors that surfaced this session.
-
-Do not skip this step — MEMORY.md is the compounding value of the system.
-
-PROMPT
+# Block stop if summary is still empty, forcing Claude to write it.
+# Use -A3 to skip the blank line between the heading and content.
+# Once Claude fills in content, the hook won't block and the session ends normally.
+CONTENT_CHECK=$(grep -A3 "## What was worked on" "$SUMMARY_FILE" 2>/dev/null | grep -v "^##" | tr -d '[:space:]')
+if [[ -z "$CONTENT_CHECK" ]]; then
+  printf '{"decision":"block","reason":"SESSION END PROTOCOL — ACTION REQUIRED. The session summary at AI/sessions/%s.md is empty. Before this session closes you must: (1) Fill in AI/sessions/%s.md — what was worked on, decisions made, knowledge updates, open loops opened/closed, files modified. (2) Update MEMORY.md with any cross-session learnings. (3) Update OPEN_LOOPS.md — mark resolved items done, add new ones. Do not skip — MEMORY.md is the compounding value of the system."}' "$TIMESTAMP" "$TIMESTAMP"
 fi
 
 # Append actual cost data from session JSONL
