@@ -429,7 +429,7 @@ def _get_google_creds():
     return creds
 
 
-def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client):
+def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, note: str = ""):
     """Fetch a Google Drive file, save locally, then ingest."""
     try:
         from googleapiclient.discovery import build
@@ -469,7 +469,7 @@ def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client):
     save_path.write_text(text, encoding="utf-8")
     print(f"Saved to: {save_path}")
 
-    ingest_file(save_path, force, yes, client)
+    ingest_file(save_path, force, yes, client, note=note)
 
 
 # ─── Notion fetch ─────────────────────────────────────────────────────────────
@@ -627,7 +627,7 @@ def _slugify(s: str, max_len: int = 50) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "-" for c in s.lower()).strip("-")[:max_len]
 
 
-def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client):
+def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client, note: str = ""):
     """Fetch a Notion page, save as markdown, then ingest."""
     token = os.getenv("NOTION_TOKEN")
     if not token:
@@ -645,10 +645,10 @@ def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client):
     save_path.write_text(content, encoding="utf-8")
     print(f"Saved to: {save_path}")
 
-    ingest_file(save_path, force, yes, client)
+    ingest_file(save_path, force, yes, client, note=note)
 
 
-def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client):
+def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client, note: str = ""):
     """Fetch all pages from a Notion database and ingest each one."""
     token = os.getenv("NOTION_TOKEN")
     if not token:
@@ -680,7 +680,7 @@ def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client):
             path = save_dir / f"{slug}.md"
             path.write_text(content, encoding="utf-8")
             print(f"  Row: {row_title}")
-            ingest_file(path, force, yes, client)
+            ingest_file(path, force, yes, client, note=note)
             total += 1
 
         if not data.get("has_more"):
@@ -692,7 +692,7 @@ def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client):
 
 # ─── Core ingest pipeline ──────────────────────────────────────────────────────
 
-def ingest_file(path: Path, force: bool, yes: bool, client) -> dict:
+def ingest_file(path: Path, force: bool, yes: bool, client, note: str = "") -> dict:
     """
     Run the full ingest pipeline for one file.
     Returns a stats dict: {status, path, created, updated, relationships}.
@@ -703,6 +703,9 @@ def ingest_file(path: Path, force: bool, yes: bool, client) -> dict:
         _log_error(path, str(e))
         print(f"  ✗ Read error: {e}")
         return {"status": "error", "path": str(path), "error": str(e)}
+
+    if note:
+        content = f"[Ingest context note: {note}]\n\n{content}"
 
     content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
     source_key = str(path.relative_to(VAULT_ROOT)) if VAULT_ROOT in path.parents else str(path)
@@ -716,6 +719,8 @@ def ingest_file(path: Path, force: bool, yes: bool, client) -> dict:
     # Cost estimate
     cost_est, tokens = estimate_cost(content)
     print(f"\nIngest: {source_key}")
+    if note:
+        print(f"  Note: {note}")
     print(f"  ~{tokens:,} tokens | Est. cost: ${cost_est:.4f}")
 
     if cost_est > AUTO_APPROVE_THRESHOLD_USD and not yes:
@@ -761,7 +766,7 @@ def ingest_file(path: Path, force: bool, yes: bool, client) -> dict:
     save_graph(graph)
 
     # Update manifest
-    manifest["entries"][source_key] = {
+    entry = {
         "hash": content_hash,
         "path": source_key,
         "ingested": datetime.now(timezone.utc).isoformat(),
@@ -769,6 +774,9 @@ def ingest_file(path: Path, force: bool, yes: bool, client) -> dict:
         "nodes_updated": updated,
         "relationships_added": rels_added,
     }
+    if note:
+        entry["note"] = note
+    manifest["entries"][source_key] = entry
     save_manifest(manifest)
 
     print(f"  ✓ {created} created, {updated} updated, {rels_added} relationships")
@@ -777,7 +785,7 @@ def ingest_file(path: Path, force: bool, yes: bool, client) -> dict:
     return {"status": "ok", "path": source_key, "created": created, "updated": updated, "relationships": rels_added}
 
 
-def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client) -> None:
+def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client, note: str = "") -> None:
     """Ingest all matching files under root."""
     files = sorted(root.rglob(pattern))
     md_files = [f for f in files if f.is_file() and not any(
@@ -794,6 +802,8 @@ def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client) -> No
     total_cost = total_chars / CHARS_PER_TOKEN / 1_000_000 * HAIKU_INPUT_COST_PER_MTOK
 
     print(f"\nBatch ingest: {len(md_files)} files | ~{total_tokens:,} tokens | Est. ${total_cost:.3f}")
+    if note:
+        print(f"Note (applied to all files): {note}")
 
     if not yes:
         answer = input("Proceed? [Y/n]: ").strip()
@@ -805,7 +815,7 @@ def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client) -> No
              "total_created": 0, "total_updated": 0}
 
     for f in md_files:
-        result = ingest_file(f, force=force, yes=True, client=client)
+        result = ingest_file(f, force=force, yes=True, client=client, note=note)
         status = result.get("status", "error")
         stats[status] = stats.get(status, 0) + 1
         stats["total_created"] += result.get("created", 0)
@@ -897,6 +907,9 @@ def main():
     parser.add_argument("--batch", action="store_true", help="Ingest all .md files under path")
     parser.add_argument("--force", action="store_true", help="Re-ingest even if hash unchanged")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip cost confirmation prompts")
+    parser.add_argument("--note", metavar="TEXT", default="",
+                        help="Context note shown to the extractor and stored in manifest "
+                             "(e.g. 'this document is from 2019 and may be outdated')")
     parser.add_argument("--manifest", action="store_true", help="Show ingest manifest and exit")
     parser.add_argument("--stats", action="store_true", help="Show graph stats and exit")
     parser.add_argument("--drive", metavar="FILE_ID", help="Fetch a Google Drive file and ingest it")
@@ -916,17 +929,18 @@ def main():
 
     client = get_client()
     save = Path(args.save) if args.save else None
+    note = args.note or ""
 
     if args.drive:
-        fetch_from_drive(args.drive, save, args.force, args.yes, client)
+        fetch_from_drive(args.drive, save, args.force, args.yes, client, note=note)
         return
 
     if args.notion:
-        fetch_from_notion(args.notion, save, args.force, args.yes, client)
+        fetch_from_notion(args.notion, save, args.force, args.yes, client, note=note)
         return
 
     if args.notion_db:
-        fetch_from_notion_db(args.notion_db, save, args.force, args.yes, client)
+        fetch_from_notion_db(args.notion_db, save, args.force, args.yes, client, note=note)
         return
 
     if not args.path:
@@ -938,9 +952,9 @@ def main():
         _die(f"Path not found: {target}")
 
     if args.batch or target.is_dir():
-        ingest_batch(target, "*.md", args.force, args.yes, client)
+        ingest_batch(target, "*.md", args.force, args.yes, client, note=note)
     else:
-        ingest_file(target, args.force, args.yes, client)
+        ingest_file(target, args.force, args.yes, client, note=note)
 
 
 if __name__ == "__main__":
