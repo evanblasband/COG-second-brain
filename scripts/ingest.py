@@ -18,6 +18,7 @@ Usage:
 
     python scripts/ingest.py --drive FILE_ID                   # fetch Drive file → ingest
     python scripts/ingest.py --drive FILE_ID --save 04-knowledge/category/name.md
+    python scripts/ingest.py --drive-folder FOLDER_ID          # recursively ingest entire Drive folder
     python scripts/ingest.py --notion PAGE_ID                  # fetch Notion page → ingest
     python scripts/ingest.py --notion PAGE_ID --save 04-knowledge/category/name.md
     python scripts/ingest.py --notion-db DB_ID                 # fetch all DB rows → ingest each
@@ -403,6 +404,7 @@ _DRIVE_EXPORT_MIMES = {
 }
 
 _PDF_MIME = "application/pdf"
+_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 
 
 def _extract_pdf_text(data: bytes) -> str:
@@ -418,6 +420,7 @@ def _extract_pdf_text(data: bytes) -> str:
         if text.strip():
             pages.append(text)
     return "\n\n".join(pages)
+
 
 _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
@@ -446,43 +449,51 @@ def _get_google_creds():
     return creds
 
 
-def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, note: str = ""):
-    """Fetch a Google Drive file, save locally, then ingest."""
+def _build_drive_service():
     try:
         from googleapiclient.discovery import build
     except ImportError:
         _die("google-api-python-client not installed. Run: pip install -r requirements.txt")
+    return build("drive", "v3", credentials=_get_google_creds())
 
-    creds = _get_google_creds()
-    service = build("drive", "v3", credentials=creds)
 
+def _fetch_drive_file_text(service, file_id: str, mime: str) -> str | None:
+    """Download one Drive file and return plain text, or None if unsupported."""
+    export_mime = _DRIVE_EXPORT_MIMES.get(mime)
+    if export_mime:
+        content = service.files().export(fileId=file_id, mimeType=export_mime).execute()
+        return content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+
+    import io
+    from googleapiclient.http import MediaIoBaseDownload
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    raw = buf.getvalue()
+
+    if mime == _PDF_MIME:
+        print("  Extracting text from PDF...")
+        text = _extract_pdf_text(raw)
+        if not text.strip():
+            print("  Warning: PDF yielded no extractable text (may be scanned/image-only).")
+        return text
+
+    return None  # unsupported binary type
+
+
+def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, note: str = ""):
+    """Fetch a Google Drive file, save locally, then ingest."""
+    service = _build_drive_service()
     meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
     name = meta.get("name", file_id)
     mime = meta.get("mimeType", "")
-    export_mime = _DRIVE_EXPORT_MIMES.get(mime)
 
     print(f"Fetching Drive file: {name}")
-
-    if export_mime:
-        content = service.files().export(fileId=file_id, mimeType=export_mime).execute()
-        text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
-    else:
-        import io
-        from googleapiclient.http import MediaIoBaseDownload
-        buf = io.BytesIO()
-        req = service.files().get_media(fileId=file_id)
-        downloader = MediaIoBaseDownload(buf, req)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        raw = buf.getvalue()
-        if mime == _PDF_MIME:
-            print("  Extracting text from PDF...")
-            text = _extract_pdf_text(raw)
-            if not text.strip():
-                print("  Warning: PDF yielded no extractable text (may be scanned/image-only).")
-        else:
-            text = raw.decode("utf-8", errors="replace")
+    text = _fetch_drive_file_text(service, file_id, mime)
+    if text is None:
+        _die(f"Unsupported file type: {mime}. Supported: Google Docs/Sheets/Slides, PDF.")
 
     if save_path is None:
         safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
@@ -492,8 +503,99 @@ def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, no
     save_path.parent.mkdir(parents=True, exist_ok=True)
     save_path.write_text(text, encoding="utf-8")
     print(f"Saved to: {save_path}")
-
     ingest_file(save_path, force, yes, client, note=note)
+
+
+def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, client, note: str = ""):
+    """Recursively fetch and ingest all supported files from a Google Drive folder."""
+    service = _build_drive_service()
+    meta = service.files().get(fileId=folder_id, fields="id,name,mimeType").execute()
+    if meta.get("mimeType") != _DRIVE_FOLDER_MIME:
+        _die(f"'{meta.get('name')}' is not a folder (mimeType: {meta.get('mimeType')})")
+
+    folder_name = meta.get("name", folder_id)
+    print(f"Ingesting Drive folder: {folder_name}")
+
+    if save_dir is None:
+        safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in folder_name)
+        save_dir = Path(f"/tmp/drive-{safe}")
+
+    stats = {
+        "ok": 0, "skipped": 0, "error": 0, "cancelled": 0,
+        "total_created": 0, "total_updated": 0, "total_relationships": 0,
+        "unsupported": 0, "unsupported_names": [],
+    }
+    _ingest_drive_folder_recursive(service, folder_id, Path(save_dir), force, yes, client, note, stats)
+
+    print(f"\n{'─' * 50}")
+    print(f"Drive folder ingest complete: {folder_name}")
+    print(f"  Ingested:          {stats['ok']}")
+    print(f"  Skipped (cached):  {stats['skipped']}")
+    print(f"  Errors:            {stats['error']}")
+    print(f"  Unsupported types: {stats['unsupported']}")
+    print(f"  Nodes created:     {stats['total_created']}")
+    print(f"  Nodes updated:     {stats['total_updated']}")
+    print(f"  Relationships:     {stats['total_relationships']}")
+    if stats["unsupported_names"]:
+        print(f"\n  Skipped files (unsupported type):")
+        for n in stats["unsupported_names"]:
+            print(f"    - {n}")
+
+
+def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
+                                    force: bool, yes: bool, client, note: str, stats: dict):
+    save_dir.mkdir(parents=True, exist_ok=True)
+    cursor = None
+    while True:
+        kwargs = {
+            "q": f"'{folder_id}' in parents and trashed = false",
+            "fields": "nextPageToken, files(id, name, mimeType)",
+            "pageSize": 100,
+        }
+        if cursor:
+            kwargs["pageToken"] = cursor
+        result = service.files().list(**kwargs).execute()
+
+        for f in result.get("files", []):
+            fid, fname, fmime = f["id"], f["name"], f.get("mimeType", "")
+
+            if fmime == _DRIVE_FOLDER_MIME:
+                safe_sub = "".join(c if c.isalnum() or c in "._-" else "_" for c in fname)
+                print(f"\nFolder: {fname}/")
+                _ingest_drive_folder_recursive(service, fid, save_dir / safe_sub, force, yes, client, note, stats)
+                continue
+
+            if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME:
+                stats["unsupported"] += 1
+                stats["unsupported_names"].append(fname)
+                continue
+
+            print(f"\nFile: {fname}")
+            try:
+                text = _fetch_drive_file_text(service, fid, fmime)
+                if text is None:
+                    stats["unsupported"] += 1
+                    stats["unsupported_names"].append(fname)
+                    continue
+
+                safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in fname)
+                if not safe_name.endswith(".md"):
+                    safe_name += ".md"
+                save_path = save_dir / safe_name
+                save_path.write_text(text, encoding="utf-8")
+
+                r = ingest_file(save_path, force, yes, client, note=note)
+                stats[r.get("status", "error")] = stats.get(r.get("status", "error"), 0) + 1
+                stats["total_created"] += r.get("created", 0)
+                stats["total_updated"] += r.get("updated", 0)
+                stats["total_relationships"] += r.get("relationships", 0)
+            except Exception as e:
+                print(f"  ✗ Error: {e}")
+                stats["error"] += 1
+
+        cursor = result.get("nextPageToken")
+        if not cursor:
+            break
 
 
 # ─── Notion fetch ─────────────────────────────────────────────────────────────
@@ -839,7 +941,8 @@ def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client, note:
             return
 
     stats = {"ok": 0, "skipped": 0, "error": 0, "cancelled": 0,
-             "total_created": 0, "total_updated": 0}
+             "total_created": 0, "total_updated": 0, "total_relationships": 0,
+             "error_paths": []}
 
     for f in md_files:
         result = ingest_file(f, force=force, yes=True, client=client, note=note)
@@ -847,10 +950,23 @@ def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client, note:
         stats[status] = stats.get(status, 0) + 1
         stats["total_created"] += result.get("created", 0)
         stats["total_updated"] += result.get("updated", 0)
+        stats["total_relationships"] += result.get("relationships", 0)
+        if status == "error":
+            stats["error_paths"].append(result.get("path", str(f)))
 
-    print(f"\nBatch complete: {stats['ok']} ingested, {stats['skipped']} skipped, "
-          f"{stats['error']} errors | "
-          f"{stats['total_created']} nodes created, {stats['total_updated']} updated")
+    print(f"\n{'─' * 50}")
+    print(f"Batch ingest complete")
+    print(f"  Ingested:         {stats['ok']}")
+    print(f"  Skipped (cached): {stats['skipped']}")
+    print(f"  Cancelled:        {stats['cancelled']}")
+    print(f"  Errors:           {stats['error']}")
+    print(f"  Nodes created:    {stats['total_created']}")
+    print(f"  Nodes updated:    {stats['total_updated']}")
+    print(f"  Relationships:    {stats['total_relationships']}")
+    if stats["error_paths"]:
+        print(f"\n  Failed files:")
+        for p in stats["error_paths"]:
+            print(f"    - {p}")
 
 
 # ─── Display helpers ───────────────────────────────────────────────────────────
@@ -957,6 +1073,7 @@ def main():
     parser.add_argument("--manifest", action="store_true", help="Show ingest manifest and exit")
     parser.add_argument("--stats", action="store_true", help="Show graph stats and exit")
     parser.add_argument("--drive", metavar="FILE_ID", help="Fetch a Google Drive file and ingest it")
+    parser.add_argument("--drive-folder", metavar="FOLDER_ID", help="Recursively fetch and ingest all supported files in a Drive folder")
     parser.add_argument("--notion", metavar="PAGE_ID", help="Fetch a Notion page and ingest it")
     parser.add_argument("--notion-db", metavar="DB_ID", help="Fetch all rows from a Notion database and ingest each")
     parser.add_argument("--save", metavar="PATH", help="Save fetched content to this path (use with --drive or --notion)")
@@ -977,6 +1094,10 @@ def main():
 
     if args.drive:
         fetch_from_drive(args.drive, save, args.force, args.yes, client, note=note)
+        return
+
+    if args.drive_folder:
+        fetch_from_drive_folder(args.drive_folder, save, args.force, args.yes, client, note=note)
         return
 
     if args.notion:
