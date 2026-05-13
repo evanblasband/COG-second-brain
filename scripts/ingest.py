@@ -13,6 +13,7 @@ Usage:
     python scripts/ingest.py path/to/file.md
     python scripts/ingest.py 04-knowledge/technologies/ --batch
     python scripts/ingest.py 04-knowledge/ --batch --yes       # skip cost prompts
+    python scripts/ingest.py --interactive                     # launch interactive wizard
     python scripts/ingest.py --manifest                        # show what's ingested
     python scripts/ingest.py --stats                           # graph node counts by type
 
@@ -1098,6 +1099,176 @@ def _log_error(path: Path, error: str):
         )
 
 
+# ─── Interactive wizard ────────────────────────────────────────────────────────
+
+def _parse_drive_id(raw: str) -> str:
+    """Extract a Drive ID from a URL or return the raw string unchanged."""
+    import re as _re
+    for pattern in (r'/folders/([a-zA-Z0-9_-]+)', r'/d/([a-zA-Z0-9_-]+)', r'[?&]id=([a-zA-Z0-9_-]+)'):
+        m = _re.search(pattern, raw)
+        if m:
+            return m.group(1)
+    return raw.strip()
+
+
+def run_interactive_wizard(client):
+    """Walk the user through an ingest configuration interactively."""
+    import re as _re
+
+    def _prompt(label, default=""):
+        val = input(label).strip()
+        return val if val else default
+
+    print("\nIngest wizard — what do you want to ingest?")
+    print("  [1] Google Drive folder (recursive)")
+    print("  [2] Google Drive files (one or more)")
+    print("  [3] Local directory")
+    print("  [4] Local files (one or more)")
+    print("  [5] Notion page")
+    print("  [6] Notion database")
+    choice = _prompt("\n> ")
+
+    sources: list[tuple[str, str]] = []  # (type, id_or_path)
+
+    if choice == "1":
+        raw = _prompt("\nDrive folder ID or URL: ")
+        sources = [("drive_folder", _parse_drive_id(raw))]
+
+    elif choice == "2":
+        print("\nEnter Drive file IDs or URLs, one per line (blank line to finish):")
+        while True:
+            raw = input("> ").strip()
+            if not raw:
+                break
+            sources.append(("drive_file", _parse_drive_id(raw)))
+
+    elif choice == "3":
+        path = _prompt("\nLocal directory path: ")
+        sources = [("local_dir", path)]
+
+    elif choice == "4":
+        print("\nEnter file paths, one per line (blank line to finish):")
+        while True:
+            raw = input("> ").strip()
+            if not raw:
+                break
+            sources.append(("local_file", raw))
+
+    elif choice == "5":
+        raw = _prompt("\nNotion page ID or URL: ")
+        m = _re.search(r'([a-f0-9]{32})', raw.replace('-', ''))
+        sources = [("notion", m.group(1) if m else raw.strip())]
+
+    elif choice == "6":
+        raw = _prompt("\nNotion database ID or URL: ")
+        m = _re.search(r'([a-f0-9]{32})', raw.replace('-', ''))
+        sources = [("notion_db", m.group(1) if m else raw.strip())]
+
+    else:
+        print("Invalid choice. Exiting.")
+        return
+
+    if not sources:
+        print("Nothing entered. Exiting.")
+        return
+
+    # Filters (only relevant for Drive + local)
+    filters: dict = {}
+    if choice in ("1", "2", "3", "4"):
+        print("\nFilters (press Enter to skip each):")
+        after_raw = _prompt("  After date (YYYY-MM-DD): ")
+        if after_raw:
+            try:
+                filters["after"] = datetime.strptime(after_raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                print(f"  Invalid date '{after_raw}' — skipping.")
+        name_contains = _prompt("  Name must contain: ")
+        if name_contains:
+            filters["name_contains"] = name_contains
+        exclude_name = _prompt("  Name to exclude: ")
+        if exclude_name:
+            filters["exclude_name"] = exclude_name
+
+    note  = _prompt("\nContext note for extractor (or Enter to skip): ")
+    force = _prompt("Force re-ingest unchanged files? [y/N]: ").lower() == "y"
+    yes   = _prompt("Skip cost prompts? [y/N]: ").lower() == "y"
+
+    # Build preview command(s)
+    print(f"\n{'─' * 50}")
+    print("Equivalent command(s):")
+    script = "python scripts/ingest.py"
+    for stype, sid in sources:
+        parts = [script]
+        if stype == "drive_folder":
+            parts.append(f"--drive-folder {sid}")
+        elif stype == "drive_file":
+            parts.append(f"--drive {sid}")
+        elif stype == "local_dir":
+            parts += [f'"{sid}"', "--batch"]
+        elif stype == "local_file":
+            parts.append(f'"{sid}"')
+        elif stype == "notion":
+            parts.append(f"--notion {sid}")
+        elif stype == "notion_db":
+            parts.append(f"--notion-db {sid}")
+        if filters.get("after"):
+            parts.append(f"--after {filters['after'].strftime('%Y-%m-%d')}")
+        if filters.get("name_contains"):
+            parts.append(f'--name-contains "{filters["name_contains"]}"')
+        if filters.get("exclude_name"):
+            parts.append(f'--exclude-name "{filters["exclude_name"]}"')
+        if note:
+            parts.append(f'--note "{note}"')
+        if force:
+            parts.append("--force")
+        if yes:
+            parts.append("--yes")
+        print(f"  {' '.join(parts)}")
+
+    confirm = _prompt("\nProceed? [Y/n]: ")
+    if confirm.lower() == "n":
+        print("Cancelled.")
+        return
+
+    # Execute
+    totals = {"ok": 0, "skipped": 0, "error": 0, "created": 0, "updated": 0, "relationships": 0}
+
+    for stype, sid in sources:
+        print(f"\n{'═' * 50}")
+        if stype == "drive_folder":
+            fetch_from_drive_folder(sid, None, force, yes, client, note=note, filters=filters)
+        elif stype == "drive_file":
+            fetch_from_drive(sid, None, force, yes, client, note=note)
+        elif stype == "local_dir":
+            p = Path(sid)
+            if not p.exists():
+                print(f"  Directory not found: {sid}")
+                continue
+            ingest_batch(p, "*.md", force, yes, client, note=note, filters=filters)
+        elif stype == "local_file":
+            p = Path(sid)
+            if not p.exists():
+                print(f"  File not found: {sid}")
+                continue
+            r = ingest_file(p, force, yes, client, note=note)
+            totals[r.get("status", "error")] = totals.get(r.get("status", "error"), 0) + 1
+            totals["created"] += r.get("created", 0)
+            totals["updated"] += r.get("updated", 0)
+            totals["relationships"] += r.get("relationships", 0)
+        elif stype == "notion":
+            fetch_from_notion(sid, None, force, yes, client, note=note)
+        elif stype == "notion_db":
+            fetch_from_notion_db(sid, None, force, yes, client, note=note)
+
+    # Aggregate summary for multi-file runs
+    if len(sources) > 1 and any(s[0] == "local_file" for s in sources):
+        print(f"\n{'═' * 50}")
+        print(f"All files complete — {totals['ok']} ingested, {totals['skipped']} skipped, "
+              f"{totals['error']} errors | "
+              f"{totals['created']} nodes created, {totals['updated']} updated, "
+              f"{totals['relationships']} relationships")
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def _die(msg: str):
@@ -1112,6 +1283,8 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("path", nargs="?", help="File or directory to ingest")
+    parser.add_argument("--interactive", "-i", action="store_true",
+                        help="Launch interactive wizard to configure and run ingest")
     parser.add_argument("--batch", action="store_true", help="Ingest all .md files under path")
     parser.add_argument("--force", action="store_true", help="Re-ingest even if hash unchanged")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip cost confirmation prompts")
@@ -1143,6 +1316,10 @@ def main():
         return
 
     client = get_client()
+
+    if args.interactive:
+        run_interactive_wizard(client)
+        return
     save = Path(args.save) if args.save else None
     note = args.note or ""
 
