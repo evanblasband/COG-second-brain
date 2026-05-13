@@ -395,6 +395,20 @@ def merge_relationship(graph: dict, rel: dict, name_to_id: dict[str, str]):
     })
 
 
+# ─── Filter helpers ────────────────────────────────────────────────────────────
+
+def _print_active_filters(filters: dict):
+    parts = []
+    if filters.get("after"):
+        parts.append(f"after {filters['after'].strftime('%Y-%m-%d')}")
+    if filters.get("name_contains"):
+        parts.append(f"name contains '{filters['name_contains']}'")
+    if filters.get("exclude_name"):
+        parts.append(f"name excludes '{filters['exclude_name']}'")
+    if parts:
+        print(f"  Filters: {' | '.join(parts)}")
+
+
 # ─── Drive fetch ──────────────────────────────────────────────────────────────
 
 _DRIVE_EXPORT_MIMES = {
@@ -506,8 +520,10 @@ def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, no
     ingest_file(save_path, force, yes, client, note=note)
 
 
-def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, client, note: str = ""):
+def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, client,
+                            note: str = "", filters: dict | None = None):
     """Recursively fetch and ingest all supported files from a Google Drive folder."""
+    filters = filters or {}
     service = _build_drive_service()
     meta = service.files().get(fileId=folder_id, fields="id,name,mimeType").execute()
     if meta.get("mimeType") != _DRIVE_FOLDER_MIME:
@@ -515,6 +531,7 @@ def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, cl
 
     folder_name = meta.get("name", folder_id)
     print(f"Ingesting Drive folder: {folder_name}")
+    _print_active_filters(filters)
 
     if save_dir is None:
         safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in folder_name)
@@ -523,14 +540,15 @@ def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, cl
     stats = {
         "ok": 0, "skipped": 0, "error": 0, "cancelled": 0,
         "total_created": 0, "total_updated": 0, "total_relationships": 0,
-        "unsupported": 0, "unsupported_names": [],
+        "filtered": 0, "unsupported": 0, "unsupported_names": [],
     }
-    _ingest_drive_folder_recursive(service, folder_id, Path(save_dir), force, yes, client, note, stats)
+    _ingest_drive_folder_recursive(service, folder_id, Path(save_dir), force, yes, client, note, filters, stats)
 
     print(f"\n{'─' * 50}")
     print(f"Drive folder ingest complete: {folder_name}")
     print(f"  Ingested:          {stats['ok']}")
     print(f"  Skipped (cached):  {stats['skipped']}")
+    print(f"  Filtered out:      {stats['filtered']}")
     print(f"  Errors:            {stats['error']}")
     print(f"  Unsupported types: {stats['unsupported']}")
     print(f"  Nodes created:     {stats['total_created']}")
@@ -543,12 +561,20 @@ def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, cl
 
 
 def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
-                                    force: bool, yes: bool, client, note: str, stats: dict):
+                                    force: bool, yes: bool, client, note: str,
+                                    filters: dict, stats: dict):
     save_dir.mkdir(parents=True, exist_ok=True)
+    after = filters.get("after")
+    name_contains = (filters.get("name_contains") or "").lower()
+    exclude_name = (filters.get("exclude_name") or "").lower()
+
     cursor = None
     while True:
+        q = f"'{folder_id}' in parents and trashed = false"
+        if after:
+            q += f" and modifiedTime > '{after.strftime('%Y-%m-%dT%H:%M:%S')}'"
         kwargs = {
-            "q": f"'{folder_id}' in parents and trashed = false",
+            "q": q,
             "fields": "nextPageToken, files(id, name, mimeType)",
             "pageSize": 100,
         }
@@ -562,7 +588,16 @@ def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
             if fmime == _DRIVE_FOLDER_MIME:
                 safe_sub = "".join(c if c.isalnum() or c in "._-" else "_" for c in fname)
                 print(f"\nFolder: {fname}/")
-                _ingest_drive_folder_recursive(service, fid, save_dir / safe_sub, force, yes, client, note, stats)
+                _ingest_drive_folder_recursive(service, fid, save_dir / safe_sub, force, yes, client, note, filters, stats)
+                continue
+
+            # Client-side name filters
+            fname_lower = fname.lower()
+            if name_contains and name_contains not in fname_lower:
+                stats["filtered"] += 1
+                continue
+            if exclude_name and exclude_name in fname_lower:
+                stats["filtered"] += 1
                 continue
 
             if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME:
@@ -914,16 +949,29 @@ def ingest_file(path: Path, force: bool, yes: bool, client, note: str = "") -> d
     return {"status": "ok", "path": source_key, "created": created, "updated": updated, "relationships": rels_added}
 
 
-def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client, note: str = "") -> None:
+def ingest_batch(root: Path, pattern: str, force: bool, yes: bool, client,
+                  note: str = "", filters: dict | None = None) -> None:
     """Ingest all matching files under root."""
+    filters = filters or {}
+    after = filters.get("after")
+    name_contains = (filters.get("name_contains") or "").lower()
+    exclude_name = (filters.get("exclude_name") or "").lower()
+
     files = sorted(root.rglob(pattern))
-    md_files = [f for f in files if f.is_file() and not any(
-        part.startswith(".") for part in f.parts
-    )]
+    md_files = [
+        f for f in files
+        if f.is_file()
+        and not any(part.startswith(".") for part in f.parts)
+        and (not after or f.stat().st_mtime >= after.timestamp())
+        and (not name_contains or name_contains in f.name.lower())
+        and (not exclude_name or exclude_name not in f.name.lower())
+    ]
 
     if not md_files:
         print(f"No files found matching {pattern} under {root}")
         return
+
+    _print_active_filters(filters)
 
     # Batch cost estimate
     total_chars = sum(f.stat().st_size for f in md_files)
@@ -1072,6 +1120,12 @@ def main():
                              "(e.g. 'this document is from 2019 and may be outdated')")
     parser.add_argument("--manifest", action="store_true", help="Show ingest manifest and exit")
     parser.add_argument("--stats", action="store_true", help="Show graph stats and exit")
+    parser.add_argument("--after", metavar="YYYY-MM-DD",
+                        help="Only ingest files modified on or after this date")
+    parser.add_argument("--name-contains", metavar="TEXT",
+                        help="Only ingest files whose name contains this string (case-insensitive)")
+    parser.add_argument("--exclude-name", metavar="TEXT",
+                        help="Skip files whose name contains this string (case-insensitive)")
     parser.add_argument("--drive", metavar="FILE_ID", help="Fetch a Google Drive file and ingest it")
     parser.add_argument("--drive-folder", metavar="FOLDER_ID", help="Recursively fetch and ingest all supported files in a Drive folder")
     parser.add_argument("--notion", metavar="PAGE_ID", help="Fetch a Notion page and ingest it")
@@ -1092,12 +1146,25 @@ def main():
     save = Path(args.save) if args.save else None
     note = args.note or ""
 
+    # Build filters dict
+    filters: dict = {}
+    if args.after:
+        try:
+            filters["after"] = datetime.strptime(args.after, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            _die(f"--after must be YYYY-MM-DD, got: {args.after}")
+    if args.name_contains:
+        filters["name_contains"] = args.name_contains
+    if args.exclude_name:
+        filters["exclude_name"] = args.exclude_name
+
     if args.drive:
         fetch_from_drive(args.drive, save, args.force, args.yes, client, note=note)
         return
 
     if args.drive_folder:
-        fetch_from_drive_folder(args.drive_folder, save, args.force, args.yes, client, note=note)
+        fetch_from_drive_folder(args.drive_folder, save, args.force, args.yes, client,
+                                note=note, filters=filters)
         return
 
     if args.notion:
@@ -1117,7 +1184,7 @@ def main():
         _die(f"Path not found: {target}")
 
     if args.batch or target.is_dir():
-        ingest_batch(target, "*.md", args.force, args.yes, client, note=note)
+        ingest_batch(target, "*.md", args.force, args.yes, client, note=note, filters=filters)
     else:
         ingest_file(target, args.force, args.yes, client, note=note)
 
