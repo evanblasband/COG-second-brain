@@ -44,7 +44,8 @@ vault/
 │
 ├── 01-daily/            ← Daily notes
 │   ├── briefs/          ← Morning brief outputs (YYYY-MM-DD.md)
-│   └── checkins/        ← End-of-day logs (YYYY-MM-DD.md)
+│   ├── checkins/        ← End-of-day logs (YYYY-MM-DD.md)
+│   └── weekly/          ← Weekly career log entries (YYYY-WW.md) — future career-log query target
 │
 ├── 02-people/           ← People CRM — one file per person
 ├── 03-projects/         ← Active and archived projects

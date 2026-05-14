@@ -20,8 +20,9 @@ Start each day with a clear operational picture: what's on the calendar, who you
 
 ## Pre-Flight
 
-1. Run `date '+%Y-%m-%d'` to get today's date
-2. Check if `01-daily/briefs/YYYY-MM-DD.md` already exists — if yes, load it and ask "Update the existing plan or start fresh?"
+1. Run `date '+%Y-%m-%d %u'` to get today's date and day-of-week (1=Mon … 7=Sun)
+2. If day-of-week is **5 (Friday)**: run `/weekly-summary` first, then continue with the daily plan. Append a "This Week" section to the plan (see Step 0.5 below).
+3. Check if `01-daily/briefs/YYYY-MM-DD.md` already exists — if yes, load it and ask "Update the existing plan or start fresh?"
 
 ## Process
 
@@ -49,6 +50,26 @@ Synthesize into a short recap block (written into the daily plan before the cale
 ```
 
 If none of these sources exist (no calendar, no brief, no session), skip the section silently.
+
+### 0.5. Friday — Weekly Summary (Fridays only)
+
+If today is Friday:
+1. Run `/weekly-summary` to generate this week's career log entry
+2. Once complete, add a **This Week** section to today's daily plan:
+
+```markdown
+## This Week — {ISO week}
+
+> Full summary: [[01-daily/weekly/{ISO-week}]]
+
+{TL;DR from the weekly summary — 2–3 sentences}
+
+**Closed this week:** {N loops closed}
+**People met:** {N unique people}
+**Decisions made:** {N}
+```
+
+3. Continue with the rest of the daily plan as normal.
 
 ### 1. Fetch today's calendar
 
