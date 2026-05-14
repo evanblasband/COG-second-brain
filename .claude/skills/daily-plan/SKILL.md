@@ -25,6 +25,31 @@ Start each day with a clear operational picture: what's on the calendar, who you
 
 ## Process
 
+### 0. Yesterday's Recap
+
+Before looking ahead, pull a quick summary of yesterday:
+
+1. Compute yesterday's date (today - 1 day)
+2. Fetch yesterday's calendar events using `mcp__claude_ai_Google_Calendar__list_events` for that date — extract meeting titles and attendees
+3. Check if `01-daily/briefs/YYYY-MM-DD.md` exists for yesterday — if yes, read the Notes section and any completed/updated items
+4. Check `AI/sessions/` for any session file from yesterday (`YYYY-MM-DD-*.md`) — if found, read the summary
+
+Synthesize into a short recap block (written into the daily plan before the calendar section):
+
+```markdown
+## Yesterday's Recap — {YYYY-MM-DD}
+
+### Meetings
+- **{HH:MM} — {Event title}** with {attendee names} — {1-line takeaway or outcome if known from notes}
+- If no meetings: "No meetings on calendar."
+
+### Key Activity
+{2-4 bullets drawn from session notes or yesterday's plan — what got done, what moved, what came up}
+- If no notes found: "No session notes for yesterday."
+```
+
+If none of these sources exist (no calendar, no brief, no session), skip the section silently.
+
 ### 1. Fetch today's calendar
 
 Use the MCP Google Calendar integration (available in interactive sessions):
@@ -63,6 +88,16 @@ source: agent-generated
 ---
 
 # Daily Plan — {Day of week}, YYYY-MM-DD
+
+## Yesterday's Recap — {YYYY-MM-DD}
+
+### Meetings
+- {meeting list or "No meetings on calendar."}
+
+### Key Activity
+- {bullets from session notes or "No session notes for yesterday."}
+
+---
 
 ## Top 3 Priorities
 
