@@ -451,19 +451,98 @@ _DRAWIO_MIME = "application/vnd.jgraph.mxgraph"
 _DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 
 
-def _extract_pdf_text(data: bytes) -> str:
+def _describe_image(image_bytes: bytes, media_type: str = "image/png", context: str = "") -> str:
+    """Send image bytes to Claude Haiku vision API and return a text description.
+
+    Gracefully degrades (returns placeholder) if ANTHROPIC_API_KEY is absent —
+    safe to call in --use-cli sessions where credits are unavailable.
+    Always uses direct API; vision inputs cannot be piped to claude -p.
+    """
+    if len(image_bytes) < 500:
+        return "(image too small to describe)"
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        env_file = VAULT_ROOT / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("ANTHROPIC_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip()
+
+    if not api_key:
+        return "(image — set ANTHROPIC_API_KEY to enable vision description)"
+
+    try:
+        import anthropic
+        import base64
+    except ImportError:
+        return "(image — anthropic SDK not installed)"
+
+    b64 = base64.standard_b64encode(image_bytes).decode()
+    prompt = (
+        "Describe the technical content of this image for a knowledge graph. "
+        "Focus on: system components, data flows, relationships, labels, and any visible text. "
+        "Be concise (3-6 sentences)."
+    )
+    if context:
+        prompt = f"Context: {context}\n\n{prompt}"
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
+        )
+        return msg.content[0].text.strip()
+    except Exception as e:
+        return f"(image — vision failed: {e})"
+
+
+def _extract_pdf_content(data: bytes) -> str:
+    """Extract text and images from a PDF. Uses vision API for embedded/scanned images."""
     try:
         import io as _io
         from pypdf import PdfReader
     except ImportError:
         raise SystemExit("pypdf not installed. Run: pip install -r requirements.txt")
+
     reader = PdfReader(_io.BytesIO(data))
     pages = []
-    for page in reader.pages:
+
+    for i, page in enumerate(reader.pages):
+        page_parts = []
+
         text = page.extract_text() or ""
         if text.strip():
-            pages.append(text)
-    return "\n\n".join(pages)
+            page_parts.append(text.strip())
+
+        try:
+            for img_obj in page.images:
+                raw = img_obj.data
+                if len(raw) < 500:
+                    continue
+                mt = "image/jpeg" if raw[:2] == b"\xff\xd8" else "image/png"
+                desc = _describe_image(raw, mt, context=f"Page {i + 1} of PDF")
+                page_parts.append(f"> [Image: {desc}]")
+        except Exception:
+            pass
+
+        if page_parts:
+            pages.append("\n\n".join(page_parts))
+        else:
+            pages.append(f"[Page {i + 1}: no extractable content]")
+
+    result = "\n\n---\n\n".join(pages)
+    if all(p.startswith("[Page") for p in pages):
+        print("  Warning: PDF yielded no extractable content (may be a scan format not supported by pypdf).")
+    return result
 
 
 def _extract_drawio_text(xml_content: str) -> str:
@@ -561,11 +640,8 @@ def _fetch_drive_file_text(service, file_id: str, mime: str, name: str = "") -> 
     raw = buf.getvalue()
 
     if mime == _PDF_MIME:
-        print("  Extracting text from PDF...")
-        text = _extract_pdf_text(raw)
-        if not text.strip():
-            print("  Warning: PDF yielded no extractable text (may be scanned/image-only).")
-        return text
+        print("  Extracting text and images from PDF...")
+        return _extract_pdf_content(raw)
 
     if mime == _DRAWIO_MIME or name.lower().endswith(".drawio"):
         print("  Extracting text from diagram...")
@@ -790,7 +866,19 @@ def _blocks_to_md(token: str, block_id: str, depth: int = 0) -> list:
             elif btype == "image":
                 url = (bc.get("file") or bc.get("external") or {}).get("url", "")
                 caption = _notion_text(bc.get("caption", []))
-                lines.append(f"![{caption}]({url})")
+                if url:
+                    try:
+                        import urllib.request as _ureq
+                        with _ureq.urlopen(url, timeout=10) as resp:
+                            img_bytes = resp.read()
+                            ct = resp.headers.get("Content-Type", "image/png").split(";")[0].strip()
+                        desc = _describe_image(img_bytes, ct, context=caption or "Notion diagram")
+                        label = f"**{caption}**\n\n" if caption else ""
+                        lines.append(f"{label}> [Image: {desc}]")
+                    except Exception:
+                        lines.append(f"![{caption}]({url})")
+                else:
+                    lines.append(f"![{caption}]()")
             elif btype in ("child_page", "child_database"):
                 lines.append(f"*[Child: {bc.get('title', btype)}]*")
                 continue  # don't recurse into child pages
