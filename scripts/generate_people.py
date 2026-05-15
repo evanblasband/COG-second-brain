@@ -24,18 +24,27 @@ Skips an entry whose name matches SELF_NAME in config.yaml (or hardcode below).
 
 import argparse
 import json
+import os
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 VAULT_ROOT = Path(__file__).parent.parent
 PEOPLE_DIR = VAULT_ROOT / "02-people"
 DEFAULT_DATA = VAULT_ROOT / "data" / "org-chart.json"
-TODAY = "2026-05-05"
-EVAN_START = "2026-05-12"
+TODAY = date.today().isoformat()
 
-# Name of the vault owner — skipped in CRM generation
-SELF_NAME = "Evan Blasband"
+# Load .env so env vars work without shell export
+try:
+    from dotenv import load_dotenv
+    load_dotenv(VAULT_ROOT / ".env")
+except ImportError:
+    pass
+
+# Name of the vault owner — set VAULT_OWNER_NAME in .env (gitignored)
+SELF_NAME = os.environ.get("VAULT_OWNER_NAME", "")
+OWNER_START = os.environ.get("VAULT_OWNER_START_DATE", "YYYY-MM-DD")
 
 # ─── Relationship tiers — edit to match your actual org ──────────────────────
 DIRECT_MANAGER: set[str] = set()      # populated from org data by manager field
@@ -242,7 +251,7 @@ location: {location}
 
 ## Relationship Context
 
-- **First met:** Not yet (starts {EVAN_START})
+- **First met:** Not yet (starts {OWNER_START})
 - **How connected:** Colleague
 - **Relationship quality:** unknown
 

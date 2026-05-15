@@ -28,8 +28,17 @@ from pathlib import Path
 
 VAULT_ROOT = Path(__file__).parent.parent
 PEOPLE_DIR = VAULT_ROOT / "02-people"
-SELF_NAME = "Evan Blasband"
-SELF_FIRST = SELF_NAME.split()[0]
+
+# Load .env so env vars work without shell export
+try:
+    from dotenv import load_dotenv
+    load_dotenv(VAULT_ROOT / ".env")
+except ImportError:
+    pass
+
+# Vault owner identity — set VAULT_OWNER_NAME in .env (gitignored)
+SELF_NAME = os.environ.get("VAULT_OWNER_NAME", "")
+SELF_FIRST = SELF_NAME.split()[0] if SELF_NAME else ""
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
@@ -114,13 +123,17 @@ _NOT_NAMES: set[str] = {
     SELF_FIRST,
 }
 
-# Email domain → org name
-_DOMAIN_ORG: dict[str, str] = {
-    "sagehealth.com": "Sage Health",
-    "hellosage.com": "Sage Health",
-    "seacomp.com": "SEACOMP",
-    "cloud2gnd.com": "Cloud2gnd",
-}
+# Email domain → org name — loaded from VAULT_DOMAIN_ORG_MAP in .env (gitignored)
+# Format: JSON object, e.g. {"yourcompany.com":"Acme Corp","vendor.com":"Vendor Inc"}
+def _load_domain_org() -> dict[str, str]:
+    raw = os.environ.get("VAULT_DOMAIN_ORG_MAP", "{}")
+    try:
+        mapping = json.loads(raw)
+        return {k: v for k, v in mapping.items() if isinstance(k, str) and isinstance(v, str)}
+    except (json.JSONDecodeError, ValueError):
+        return {}
+
+_DOMAIN_ORG: dict[str, str] = _load_domain_org()
 
 
 # ─── Frontmatter parsing ───────────────────────────────────────────────────────
@@ -403,7 +416,7 @@ def fetch_calendar_attendees(doc_date: str, title_keywords: list[str]) -> list[d
 # ─── Name/org utilities ────────────────────────────────────────────────────────
 
 def email_to_name(email: str) -> str:
-    """Convert 'kevin.shyu@sagehealth.com' → 'Kevin Shyu'. Handles partial names."""
+    """Convert 'first.last@company.com' → 'First Last'. Handles partial names."""
     local = email.split("@")[0]
     parts = re.split(r"[._\-+]", local)
     return " ".join(p.capitalize() for p in parts if p)

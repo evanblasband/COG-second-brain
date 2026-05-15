@@ -115,7 +115,7 @@ tech_stack: [{technology names}]
 
 **Date:** YYYY-MM-DD  
 **Use case:** {The specific use-case context provided}  
-**Evaluator:** Claude (agent-generated) — reviewed by Evan
+**Evaluator:** Claude (agent-generated) — reviewed by owner
 
 ---
 

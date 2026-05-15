@@ -53,7 +53,7 @@ status: active
 confidence: high | medium | low
 source: internal
 project: {project if applicable, else omit}
-people_involved: [Evan]
+people_involved: [owner]
 ---
 
 # Decision: {Decision title}
