@@ -46,6 +46,8 @@ if [[ -x "$PYTHON" ]]; then
     >> /tmp/session-summarizer.log 2>&1 &
   disown $!
 
-  # Append cost data (fast, synchronous)
-  "$PYTHON" "$VAULT_DIR/scripts/cost_report.py" session --append-to "$SUMMARY_FILE" 2>/dev/null
+  # Append cost data once — skip if already present
+  if ! grep -q "## Session Cost" "$SUMMARY_FILE" 2>/dev/null; then
+    "$PYTHON" "$VAULT_DIR/scripts/cost_report.py" session --append-to "$SUMMARY_FILE" 2>/dev/null
+  fi
 fi

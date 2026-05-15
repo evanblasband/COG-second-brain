@@ -879,6 +879,11 @@ def _blocks_to_md(token: str, block_id: str, depth: int = 0) -> list:
                         lines.append(f"![{caption}]({url})")
                 else:
                     lines.append(f"![{caption}]()")
+            elif btype == "meeting_notes":
+                # Notion AI meeting summary block. Content lives in children
+                # (Action Items, summary sections as standard heading/bullet blocks).
+                # The has_children check below recurses into them automatically.
+                lines.append("## Meeting Notes")
             elif btype in ("child_page", "child_database"):
                 lines.append(f"*[Child: {bc.get('title', btype)}]*")
                 continue  # don't recurse into child pages
