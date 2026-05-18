@@ -449,6 +449,8 @@ _DRIVE_EXPORT_MIMES = {
 _PDF_MIME = "application/pdf"
 _DRAWIO_MIME = "application/vnd.jgraph.mxgraph"
 _DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _describe_image(image_bytes: bytes, media_type: str = "image/png", context: str = "") -> str:
@@ -588,6 +590,65 @@ def _extract_drawio_text(xml_content: str) -> str:
     return "\n\n".join(parts) if parts else "(empty diagram)"
 
 
+def _extract_docx_content(data: bytes) -> str:
+    """Extract text from a DOCX file, preserving heading structure."""
+    try:
+        import io as _io
+        from docx import Document
+    except ImportError:
+        raise SystemExit("python-docx not installed. Run: pip install python-docx")
+
+    doc = Document(_io.BytesIO(data))
+    lines = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        style = para.style.name if para.style else ""
+        if style.startswith("Heading 1"):
+            lines.append(f"# {text}")
+        elif style.startswith("Heading 2"):
+            lines.append(f"## {text}")
+        elif style.startswith("Heading 3"):
+            lines.append(f"### {text}")
+        else:
+            lines.append(text)
+    for table in doc.tables:
+        rows = []
+        for i, row in enumerate(table.rows):
+            cells = [c.text.strip() for c in row.cells]
+            rows.append("| " + " | ".join(cells) + " |")
+            if i == 0:
+                rows.append("| " + " | ".join("---" for _ in cells) + " |")
+        lines.append("\n".join(rows))
+    return "\n\n".join(lines)
+
+
+def _extract_xlsx_content(data: bytes) -> str:
+    """Extract text from an XLSX file, one section per sheet."""
+    try:
+        import io as _io
+        import openpyxl
+    except ImportError:
+        raise SystemExit("openpyxl not installed. Run: pip install openpyxl")
+
+    wb = openpyxl.load_workbook(_io.BytesIO(data), read_only=True, data_only=True)
+    sections = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            cells = [str(c) if c is not None else "" for c in row]
+            if not any(cells):
+                continue
+            rows.append("| " + " | ".join(cells) + " |")
+            if i == 0:
+                rows.append("| " + " | ".join("---" for _ in cells) + " |")
+        if rows:
+            sections.append(f"## {sheet_name}\n\n" + "\n".join(rows))
+    return "\n\n".join(sections)
+
+
 _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -633,7 +694,7 @@ def _fetch_drive_file_text(service, file_id: str, mime: str, name: str = "") -> 
     import io
     from googleapiclient.http import MediaIoBaseDownload
     buf = io.BytesIO()
-    downloader = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
+    downloader = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id, supportsAllDrives=True))
     done = False
     while not done:
         _, done = downloader.next_chunk()
@@ -642,6 +703,14 @@ def _fetch_drive_file_text(service, file_id: str, mime: str, name: str = "") -> 
     if mime == _PDF_MIME:
         print("  Extracting text and images from PDF...")
         return _extract_pdf_content(raw)
+
+    if mime == _DOCX_MIME or name.lower().endswith(".docx"):
+        print("  Extracting text from Word document...")
+        return _extract_docx_content(raw)
+
+    if mime == _XLSX_MIME or name.lower().endswith(".xlsx"):
+        print("  Extracting text from Excel workbook...")
+        return _extract_xlsx_content(raw)
 
     if mime == _DRAWIO_MIME or name.lower().endswith(".drawio"):
         print("  Extracting text from diagram...")
@@ -653,14 +722,14 @@ def _fetch_drive_file_text(service, file_id: str, mime: str, name: str = "") -> 
 def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, note: str = ""):
     """Fetch a Google Drive file, save locally, then ingest."""
     service = _build_drive_service()
-    meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
+    meta = service.files().get(fileId=file_id, fields="id,name,mimeType", supportsAllDrives=True).execute()
     name = meta.get("name", file_id)
     mime = meta.get("mimeType", "")
 
     print(f"Fetching Drive file: {name}")
     text = _fetch_drive_file_text(service, file_id, mime, name=name)
     if text is None:
-        _die(f"Unsupported file type: {mime}. Supported: Google Docs/Sheets/Slides, PDF, .drawio.")
+        _die(f"Unsupported file type: {mime}. Supported: Google Docs/Sheets/Slides, PDF, DOCX, XLSX, .drawio.")
 
     if save_path is None:
         safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
@@ -678,7 +747,7 @@ def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, cl
     """Recursively fetch and ingest all supported files from a Google Drive folder."""
     filters = filters or {}
     service = _build_drive_service()
-    meta = service.files().get(fileId=folder_id, fields="id,name,mimeType").execute()
+    meta = service.files().get(fileId=folder_id, fields="id,name,mimeType", supportsAllDrives=True).execute()
     if meta.get("mimeType") != _DRIVE_FOLDER_MIME:
         _die(f"'{meta.get('name')}' is not a folder (mimeType: {meta.get('mimeType')})")
 
@@ -754,7 +823,8 @@ def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
                 continue
 
             is_drawio = fmime == _DRAWIO_MIME or fname.lower().endswith(".drawio")
-            if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME and not is_drawio:
+            is_office = fmime in (_DOCX_MIME, _XLSX_MIME)
+            if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME and not is_drawio and not is_office:
                 stats["unsupported"] += 1
                 stats["unsupported_names"].append(fname)
                 continue

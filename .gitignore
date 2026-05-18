@@ -68,8 +68,8 @@ INGEST_QUEUE.md
 03-projects/**
 !03-projects/.gitkeep
 
-# Knowledge base
-04-knowledge/**/*.md
+# Knowledge base — all content (md, csv, txt, docx, xlsx, pdf, etc.)
+04-knowledge/**
 !04-knowledge/**/.gitkeep
 
 # Decisions, mistakes, resources
