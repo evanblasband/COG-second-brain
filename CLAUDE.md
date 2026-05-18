@@ -131,7 +131,7 @@ See `AGENTS.md` for full worker agent specifications.
 
 **Core workers (6):** `worker-data-collector`, `worker-researcher`, `worker-file-ops`, `worker-executor`, `worker-publisher`, `brief-people-updater`
 
-**Skills (14):** `auto-research`, `braindump`, `comprehensive-analysis`, `daily-brief`, `generate-prd`, `knowledge-consolidation`, `meeting-transcript`, `onboarding`, `scout`, `team-brief`, `update-cog`, `update-knowledge-base`, `url-dump`, `weekly-checkin`
+**Skills (23):** `auto-research`, `braindump`, `comprehensive-analysis`, `compress`, `daily-brief`, `daily-plan`, `decide`, `eval`, `generate-prd`, `ingest`, `knowledge-consolidation`, `meeting-transcript`, `mistake`, `onboarding`, `playbook`, `prep`, `scout`, `team-brief`, `update-cog`, `update-knowledge-base`, `url-dump`, `weekly-checkin`, `weekly-summary`
 
 ---
 

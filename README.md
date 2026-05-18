@@ -13,7 +13,7 @@
 ```mermaid
 graph LR
     A[You] -- natural language --> B[AI Agent]
-    B -- runs --> C[22 Skills]
+    B -- runs --> C[23 Skills]
     C -- delegates to --> W[6 Worker Agents]
     C -- reads & writes --> D[.md Files]
     W -- reads & writes --> D
@@ -22,7 +22,7 @@ graph LR
     D --> F[Google Drive]
 ```
 
-> **[Fork Note]:** Upstream diagram referenced 17 skills and synced with `GitHub / Linear / Slack / PostHog` via iCloud. This fork has 22 skills, uses Google Drive instead of iCloud, and integrates with Google Calendar, Gmail, and Google Drive instead of Linear/Slack/PostHog.
+> **[Fork Note]:** Upstream diagram referenced 17 skills and synced with `GitHub / Linear / Slack / PostHog` via iCloud. This fork has 23 skills, uses Google Drive instead of iCloud, and integrates with Google Calendar, Gmail, and Google Drive instead of Linear/Slack/PostHog.
 
 > **New to COG?** ~~Watch the [2-minute walkthrough](https://youtube.com/PLACEHOLDER) to see it in action.~~
 
@@ -63,11 +63,11 @@ COG ships a **full Claude Code surface** ~~plus **core native surfaces** for Kir
 
 | Surface | Current support | Notes |
 |---|---|---|
-| Claude Code | 22 native skills + 6 worker agents | Full first-class surface |
+| Claude Code | 23 native skills + 6 worker agents | Full first-class surface |
 | ~~Cursor~~ | ~~Plugin manifest + rules~~ | ~~`.cursor-plugin/plugin.json` + `.cursorrules`~~ — **removed** |
 | ~~Kiro~~ | ~~7 native powers~~ | ~~Core workflows today~~ — **removed** |
 | ~~Gemini CLI~~ | ~~7 native commands~~ | ~~Core workflows today~~ — **removed** |
-| `AGENTS.md` | 22 documented commands | Universal fallback |
+| `AGENTS.md` | 23 documented commands | Universal fallback |
 
 ~~Before publishing or updating framework files, run `./scripts/validate-agent-surface.sh` to catch drift between manifests, docs, and shipped files.~~ See [docs/AGENT-SUPPORT.md](docs/AGENT-SUPPORT.md) for the detailed support matrix and contributor rules.
 
@@ -131,6 +131,7 @@ COG ships a **full Claude Code surface** ~~plus **core native surfaces** for Kir
 | **compress** | Prune stale context, summarize aging docs, clean resolved open loops | "Compress context" |
 | **ingest** | Ingest documents into the knowledge graph via entity extraction | "Ingest this document" |
 | **playbook** | Generate a first-30-days onboarding playbook from knowledge gaps and people CRM | "Generate playbook" |
+| **weekly-summary** | Automated weekly career log — synthesizes calendar, sessions, decisions, and people into `01-daily/weekly/YYYY-WW.md` | "Weekly summary" / "Log this week" |
 
 ### Worker Agents (Specialist Sessions)
 
@@ -163,7 +164,7 @@ Every observation includes a source citation with confidence level. See `02-peop
 
 COG matches your role during onboarding to a **role pack** that prioritizes the most relevant skills and integrations for you. ~~Available role packs: Product Manager, Engineering Lead, Engineer, Designer, Founder, Marketer — or create your own from the template.~~
 
-> **[Fork Note]:** The upstream ships 7 role packs. This fork retains only `engineer` and adds `hardware-solutions-architect`. Removed: ~~Product Manager~~, ~~Engineering Lead~~, ~~Designer~~, ~~Founder~~, ~~Marketer~~. A `_template.md` is still available for creating custom packs.
+> **[Fork Note]:** The upstream ships 7 role packs. This fork retains only `engineer` and adds `hardware-solutions-architect` (3 files total including `_template.md`). Removed: ~~Product Manager~~, ~~Engineering Lead~~, ~~Designer~~, ~~Founder~~, ~~Marketer~~. A `_template.md` is still available for creating custom packs.
 
 > **New to team skills?** These require GitHub CLI (`gh`) and work best with ~~Linear, Slack, and PostHog~~ MCP integrations. They degrade gracefully — start with just GitHub and add integrations over time. See [SETUP.md](SETUP.md) for configuration.
 
@@ -233,7 +234,7 @@ COG-second-brain/
 **This fork's actual structure:**
 ```
 COG-second-brain/
-├── .claude/skills/          # Claude Code skills (22 — 17 upstream + 9 added - 4 removed)
+├── .claude/skills/          # Claude Code skills (23 — 17 upstream + 10 added - 4 removed)
 ├── .claude/agents/          # Worker agent definitions (6)
 ├── .claude/roles/           # Role packs (3: hardware-solutions-architect, engineer, _template)
 ├── .claude/hooks/           # Claude Code hooks

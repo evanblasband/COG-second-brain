@@ -140,6 +140,34 @@ This document defines the available commands/skills for AI agents interacting wi
 
 ---
 
+### /weekly-summary
+
+**Description:** Automated weekly career log entry — synthesizes everything that happened Mon–Fri from calendar, session notes, decisions, open loops, and people interactions.
+
+**Triggers:**
+- `/weekly-summary`
+- "weekly summary"
+- "write up my week"
+- "log this week"
+
+**Purpose:** Generate a factual, data-driven record of the week — who you met, what shipped, what decisions were made, what remains open, and what was learned. Designed for future querying: performance reviews, resume updates, retrospectives, and long-term pattern analysis.
+
+**Distinct from `/weekly-checkin`:** `/weekly-checkin` is interactive and reflective (asks questions). This skill is automated and factual (reads sources and synthesizes without asking questions).
+
+**What it does:**
+1. Reads this week's Google Calendar events
+2. Scans `AI/sessions/` for session summaries from the week
+3. Reviews `05-decisions/` for decisions logged this week
+4. Reviews `OPEN_LOOPS.md` for items opened or resolved this week
+5. Scans `02-people/` for any profiles updated this week
+6. Synthesizes into a structured career log entry
+
+**Output location:** `01-daily/weekly/YYYY-WW.md`
+
+**Auto-triggered:** Also runs automatically every Friday morning when `/daily-plan` is invoked (Step 0.5 in daily-plan).
+
+---
+
 ### /knowledge-consolidation
 
 **Description:** Build frameworks from scattered insights across all braindumps and notes.
@@ -582,7 +610,7 @@ Create profiles manually using the template at `templates/people-profile-templat
 COG-second-brain/
 ├── .claude/agents/        # Worker agent definitions (6)
 ├── .claude/roles/         # Role packs for personalized recommendations
-├── .claude/skills/        # Skill definitions (22 skills)
+├── .claude/skills/        # Skill definitions (23 skills)
 ├── .claude/hooks/         # Automation hooks (session-start, session-end, etc.)
 ├── 00-inbox/              # Landing zone, profile files
 │   ├── MY-PROFILE.md      # User profile with role pack (created by onboarding)
@@ -616,14 +644,30 @@ COG-second-brain/
 │   └── conflicts.json     # Entity type conflicts flagged for review
 ├── scripts/               # Python + shell tools
 │   ├── ingest.py          # Knowledge graph ingest (+ CRM auto-update)
+│   ├── ingest-scan.py     # Scan Drive + Notion for new content to queue
 │   ├── people_updater.py  # CRM auto-update from meeting documents
+│   ├── generate_people.py # Bulk people profile generation
 │   ├── query.py           # Calendar, Gmail, Drive, Slack, GitHub CLI
+│   ├── research.py        # Research agent (auto-triggers ingest)
 │   ├── heartbeat.py       # Background digest agent
 │   ├── janitor.py         # Context janitor + rolling summaries
+│   ├── session_summarizer.py # Session summary generator
 │   ├── drive_sync.py      # Google Drive folder sync
-│   └── cost_report.py     # Session cost reporting
+│   ├── cost_report.py     # Session cost reporting
+│   ├── google_auth.py     # Google OAuth helper
+│   ├── log_tool_use.py    # Tool use logger (post-tool-use hook)
+│   ├── export-vault.sh    # Vault export utility
+│   ├── import-vault.sh    # Vault import utility
+│   └── tmux-brain.sh      # tmux session launcher for brain sessions
 ├── templates/             # Document templates (people profile, meeting note, etc.)
 ├── config/config.yaml     # System configuration (no secrets)
+├── .claude/hooks/         # Claude Code automation hooks
+│   ├── session-start.sh   # Load context at session open
+│   ├── session-end.sh     # Write session summary at session close
+│   ├── post-tool-use.sh   # Log tool use after each tool call
+│   ├── pre-compact.sh     # Run before context compaction
+│   ├── on-ingest.sh       # Trigger after ingest operations
+│   └── on-error.sh        # Handle hook errors
 └── setup.sh               # One-command machine setup
 ```
 
@@ -665,7 +709,7 @@ COG matches your role to a role pack during onboarding. Role packs (in `.claude/
 - Which integrations to recommend
 - Suggested agent mode (solo vs team)
 
-Available packs: Product Manager, Engineering Lead, Engineer, Designer, Founder, Marketer. Create custom packs from `_template.md`.
+Available packs: `engineer`, `hardware-solutions-architect`. Create custom packs from `_template.md`.
 
 ## Version & Updates
 

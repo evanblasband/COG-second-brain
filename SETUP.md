@@ -1,16 +1,18 @@
 # COG Setup Guide
 
+> **[Fork Note]:** This is a customized fork for a Hardware Solutions Architect / Special Projects Engineer role. The content below has been partially updated to reflect this fork. Key fork differences: **Claude Code only** (Kiro, Gemini CLI, and iCloud removed), **23 skills** (17 upstream + 10 added - 4 removed), and a **reorganized vault structure** (`02-people/`, `03-projects/`, `04-knowledge/` instead of upstream's `02-personal/`, `03-professional/`, `04-projects/`, `05-knowledge/`). The upstream project is [huytieu/COG-second-brain](https://github.com/huytieu/COG-second-brain).
+
 Complete step-by-step instructions for setting up your COG (Cognition + Obsidian + Git) agentic second brain system.
 
 ## Quick Start (Easiest Way)
 
 ### What You Need
 
-1. **AI Agent** (choose one or more):
-   - [Claude Code](https://claude.ai/download) - Uses `.claude/skills/` (full 17-skill native surface)
-   - [Kiro](https://kiro.dev/) - Uses `.kiro/powers/` (7 core native powers)
-   - [Gemini CLI](https://github.com/google-gemini/gemini-cli) - Uses `GEMINI.md` + `.gemini/commands/` (7 core native commands)
-   - Any OpenAI-compatible or markdown-reading agent - Uses `AGENTS.md`
+1. **AI Agent:**
+   - [Claude Code](https://claude.ai/download) - Uses `.claude/skills/` (23 native skills) — **only supported agent in this fork**
+   - ~~[Kiro](https://kiro.dev/)~~ — **removed from this fork**
+   - ~~[Gemini CLI](https://github.com/google-gemini/gemini-cli)~~ — **removed from this fork**
+   - Other agents: Point at `AGENTS.md` → "Run onboarding" (universal fallback, 23 documented commands)
 2. **Obsidian** ([Download here](https://obsidian.md/)) - Recommended (optional)
 3. **Git** - Already on your system if you can run clone commands
 
@@ -43,13 +45,9 @@ That's it! You now have a working second brain.
 
 **What just happened?**
 - The cloned `COG-second-brain` folder IS your second brain
-- COG now exposes a clear multi-agent support matrix:
-  - `.claude/skills/` - 17 Claude Code skills (full surface)
-  - `.kiro/powers/` - 7 Kiro powers (core workflows)
-  - `.gemini/commands/` + `.gemini/skills/` - 7 Gemini CLI commands (core workflows)
-  - `AGENTS.md` - 17 documented commands for Codex and other agents
+- COG runs on Claude Code with 23 native skills in `.claude/skills/`
+- `AGENTS.md` provides universal documentation for any markdown-reading agent (23 documented commands)
 - Onboarding will create your personalized directory structure
-- You can validate the packaged agent surfaces anytime with `./scripts/validate-agent-surface.sh`
 
 **Optional: Use with Obsidian**
 
@@ -87,10 +85,8 @@ Onboarding creates:
 - `00-inbox/MY-PROFILE.md` - Your info, role pack, and projects
 - `00-inbox/MY-INTERESTS.md` - Topics for daily briefs
 - `00-inbox/MY-INTEGRATIONS.md` - Active/disabled external service integrations
-- `03-professional/COMPETITIVE-WATCHLIST.md` - Tracking list (if any)
-- Project folders in `04-projects/`
 
-**Role-based personalization:** COG matches your role to a role pack that prioritizes the most relevant skills and integrations for you. Available packs: Product Manager, Engineering Lead, Engineer, Designer, Founder, Marketer.
+**Role-based personalization:** COG matches your role to a role pack that prioritizes the most relevant skills and integrations for you. Available packs (this fork): `engineer`, `hardware-solutions-architect`. Create custom packs from `.claude/roles/_template.md`.
 
 ### Test Your Setup
 
@@ -125,55 +121,74 @@ After a week of braindumps:
 
 After running onboarding, you'll have this structure:
 
+> **[Fork Note]:** This fork uses a significantly different directory structure from upstream. The upstream structure (`02-personal/`, `03-professional/`, `04-projects/`, `05-knowledge/people/`, `06-templates/`) has been replaced with the structure below.
+
 ```
 COG-second-brain/              # This is your second brain folder
-├── AGENTS.md                  # Universal agent documentation
+├── AGENTS.md                  # Universal agent documentation (23 commands)
+├── CLAUDE.md                  # Session protocol and framework instructions
+├── SOUL.md                    # Agent personality and values
+├── USER.md                    # User profile, accounts, domain depths
+├── MEMORY.md                  # Cross-session key learnings (append-only)
+├── OPEN_LOOPS.md              # Unresolved items (loaded every session)
+├── INGEST_QUEUE.md            # Pending items for knowledge graph ingestion
 ├── .claude/
 │   ├── agents/                # 6 worker agent definitions
-│   ├── roles/                 # 7 role packs for personalized recommendations
-│   └── skills/                # 17 Claude Code skills
+│   ├── roles/                 # 3 role packs (engineer, hardware-solutions-architect, _template)
+│   ├── hooks/                 # Automation hooks (session-start, session-end, etc.)
+│   └── skills/                # 23 Claude Code skills
 │       ├── onboarding/
 │       ├── braindump/
 │       ├── daily-brief/
+│       ├── daily-plan/
 │       ├── weekly-checkin/
+│       ├── weekly-summary/
 │       ├── knowledge-consolidation/
 │       ├── url-dump/
 │       ├── auto-research/
-│       ├── create-user-story/
 │       ├── generate-prd/
-│       ├── generate-release-notes/
-│       ├── export-open-issues/
-│       ├── publish-to-confluence/
-│       └── update-knowledge-base/
-├── .kiro/
-│   └── powers/                # 7 Kiro powers (core workflows)
-│       ├── cog-onboarding/
-│       ├── cog-braindump/
-│       ├── cog-daily-brief/
-│       ├── cog-weekly-checkin/
-│       ├── cog-knowledge-consolidation/
-│       ├── cog-url-dump/
-│       └── cog-update/
-├── .gemini/
-│   ├── commands/              # 7 Gemini CLI commands (core workflows)
-│   └── skills/                # Detailed Gemini command playbooks
-├── CLAUDE.md                  # Framework instructions (role packs, integrations)
+│       ├── update-knowledge-base/
+│       ├── team-brief/
+│       ├── meeting-transcript/
+│       ├── comprehensive-analysis/
+│       ├── scout/
+│       ├── update-cog/
+│       ├── eval/
+│       ├── ingest/
+│       ├── prep/
+│       ├── decide/
+│       ├── mistake/
+│       ├── compress/
+│       └── playbook/
 ├── 00-inbox/                  # Profiles, interests, integrations (created by onboarding)
+│   ├── MY-PROFILE.md
+│   ├── MY-INTERESTS.md
+│   └── MY-INTEGRATIONS.md
 ├── 01-daily/                  # Daily briefs and check-ins
-│   ├── briefs/
-│   └── checkins/
-├── 02-personal/               # Personal domain (private)
-│   └── braindumps/
-├── 03-professional/           # Professional domain
-│   └── braindumps/
-├── 04-projects/               # Project-specific (created by onboarding)
-├── 05-knowledge/              # Consolidated insights
-│   ├── consolidated/
-│   ├── patterns/
-│   ├── people/                # People CRM profiles
-│   ├── booklets/              # URL bookmarks
-│   └── timeline/
-└── 06-templates/              # Markdown templates (incl. people profile)
+│   ├── briefs/                # Morning brief outputs (YYYY-MM-DD.md)
+│   ├── checkins/              # End-of-day logs (YYYY-MM-DD.md)
+│   └── weekly/                # Weekly career log entries (YYYY-WW.md)
+├── 02-people/                 # People CRM — one file per person
+├── 03-projects/               # Active and archived projects
+├── 04-knowledge/              # Domain knowledge, tech evals, research
+│   ├── regulations/           # HIPAA, FCC, state privacy laws
+│   ├── technologies/          # IoT protocols, sensing tech, edge computing
+│   ├── competitors/           # Competitive landscape
+│   ├── consolidated/          # Synthesized frameworks
+│   ├── patterns/              # Identified patterns
+│   └── booklets/              # URL bookmarks by category
+├── 05-decisions/              # Decision log (append-only)
+├── 06-mistakes/               # Error log with prevention rules
+├── 07-resources/              # Reference docs, guides
+├── AI/                        # All agent outputs
+│   ├── sessions/              # Session summaries (+ archive/, rolling/)
+│   ├── research/              # Research agent outputs
+│   ├── evaluations/           # /eval outputs
+│   └── drafts/                # Document drafts
+├── graph/                     # Knowledge graph (graph.json, ingest_manifest.json)
+├── scripts/                   # Python + shell utilities
+├── templates/                 # Markdown templates (people profile, meeting note, etc.)
+└── config/config.yaml         # System configuration (no secrets)
 ```
 
 ## Optional: Advanced Configuration
@@ -206,7 +221,9 @@ git add .gitignore
 git commit -m "Update gitignore"
 ```
 
-### iCloud Sync (Apple Devices)
+### iCloud Sync (Apple Devices) — Upstream Only
+
+> **[Fork Note]:** This fork uses Google Drive for sync, not iCloud. The steps below are from upstream and may not apply. See `scripts/drive_sync.py` for Google Drive sync.
 
 Want your second brain on iPhone, iPad, and Mac?
 
@@ -250,10 +267,10 @@ In Claude Code, ask: "Run onboarding" → "Add new projects"
 **Option 2: Manual**
 Create project folder manually:
 ```bash
-mkdir -p 04-projects/my-new-project/{braindumps,competitive,content,planning,resources}
+mkdir -p 03-projects/my-new-project
 ```
 
-Then create `04-projects/my-new-project/PROJECT-OVERVIEW.md`:
+Then create `03-projects/my-new-project/PROJECT-OVERVIEW.md`:
 ```markdown
 ---
 type: project-overview
@@ -299,23 +316,6 @@ mkdir -p .claude/skills/my-skill
 touch .claude/skills/my-skill/SKILL.md
 ```
 
-### For Kiro
-
-**Edit existing powers:**
-```bash
-code .kiro/powers/cog-braindump/POWER.md
-```
-
-Each `POWER.md` file contains:
-- `name`, `displayName`, `description`, `keywords` in frontmatter
-- Onboarding and steering instructions in body
-
-**Create new powers:**
-```bash
-mkdir -p .kiro/powers/my-power
-touch .kiro/powers/my-power/POWER.md
-```
-
 ### For Other Agents
 
 Edit `AGENTS.md` to add or modify skill documentation. This file serves as universal documentation that any AI agent can read.
@@ -325,15 +325,7 @@ Edit `AGENTS.md` to add or modify skill documentation. This file serves as unive
 When you modify a skill, update every shipped surface that claims to support it:
 1. `.claude/skills/[name]/SKILL.md` - Claude Code (required)
 2. `AGENTS.md` - Universal documentation (required)
-3. `.claude-plugin/plugin.json` - Marketplace/package manifest (required)
-4. `.kiro/powers/cog-[name]/POWER.md` - Kiro (if that surface supports the skill)
-5. `.gemini/commands/[name].toml` + `.gemini/skills/[name].md` - Gemini CLI (if that surface supports the skill)
-6. `README.md` / `SETUP.md` / `docs/AGENT-SUPPORT.md` - support matrix docs when counts or support levels change
-
-After changes, run:
-```bash
-./scripts/validate-agent-surface.sh
-```
+3. `README.md` / `SETUP.md` / `docs/AGENT-SUPPORT.md` - support matrix docs when counts or support levels change
 
 ## Troubleshooting
 
@@ -346,11 +338,6 @@ After changes, run:
 2. Verify each skill folder has a `SKILL.md` file
 3. Make sure you're running Claude Code from the COG folder root
 4. Try restarting Claude Code
-
-**Solutions for Kiro:**
-1. Check `.kiro/powers/` folder exists
-2. Verify each power folder has a `POWER.md` file
-3. Try mentioning specific keywords from the power's `keywords` list
 
 **Solutions for Other Agents:**
 1. Ensure `AGENTS.md` exists in the root folder
@@ -495,13 +482,16 @@ git add -A && git commit -m "Update COG framework to v$(cat COG-VERSION)"
 
 | Updated (framework files) | Never touched (your content) |
 |---|---|
-| Skills (`.claude/skills/`, `.kiro/powers/`, `.gemini/`) | `00-inbox/` (profiles, notes) |
-| Docs (`README.md`, `SETUP.md`, `AGENTS.md`, etc.) | `01-daily/` (briefs, checkins) |
-| Scripts (`cog-update.sh`) | `02-personal/` (braindumps) |
-| Config (`.gitignore`, `.claude-plugin/plugin.json`, `marketplace-entry.json`) | `03-professional/` (braindumps) |
-| Version (`COG-VERSION`) | `04-projects/` (project files) |
-| | `05-knowledge/` (consolidated) |
-| | `06-templates/` (your templates) |
+| Skills (`.claude/skills/`) | `00-inbox/` (profiles, notes) |
+| Docs (`README.md`, `SETUP.md`, `AGENTS.md`, etc.) | `01-daily/` (briefs, checkins, weekly) |
+| Scripts (`cog-update.sh`) | `02-people/` (people CRM) |
+| Config (`.gitignore`, `marketplace-entry.json`) | `03-projects/` (project files) |
+| Version (`COG-VERSION`) | `04-knowledge/` (domain knowledge) |
+| | `05-decisions/` (decision log) |
+| | `06-mistakes/` (error log) |
+| | `07-resources/` (reference docs) |
+| | `AI/` (agent outputs) |
+| | `graph/` (knowledge graph) |
 
 ### Checking Your Version
 
@@ -523,7 +513,7 @@ Once you're comfortable:
 1. ✅ Use COG daily for 2 weeks to build the habit
 2. ✅ Customize skills to match your workflow
 3. ✅ Set up Git backup to your own GitHub
-4. ✅ Try iCloud sync for multi-device access
+4. ✅ Try Google Drive sync for multi-device access (`scripts/drive_sync.py`)
 5. ✅ Explore knowledge consolidation features
 6. ✅ Share your improvements with the community
 
