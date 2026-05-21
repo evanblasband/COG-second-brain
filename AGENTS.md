@@ -436,6 +436,22 @@ This document defines the available commands/skills for AI agents interacting wi
 
 ---
 
+### /cog-backlog
+
+**Description:** Add a feature or improvement idea to the COG second brain backlog.
+
+**Triggers:**
+- `/cog-backlog {idea}`
+- "add this to the COG backlog"
+- "backlog this"
+- "save this for the brain later"
+
+**Purpose:** Capture system-level improvement ideas in `COG-BACKLOG.md` without cluttering OPEN_LOOPS.md. Accepts a bare description or a detailed spec; source URLs optional. Inserts at the top of the Active section with today's date.
+
+**Output location:** `COG-BACKLOG.md`
+
+---
+
 ### /mistake
 
 **Description:** Log an error or wrong assumption with root cause analysis and a prevention rule.
