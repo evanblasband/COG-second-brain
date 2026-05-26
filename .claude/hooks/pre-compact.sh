@@ -52,4 +52,5 @@ source: agent-generated
 EOF
 
 echo "Pre-compact snapshot: $SNAPSHOT_FILE"
+echo "BEFORE COMPACTION: Fill in $SNAPSHOT_FILE now — write what you were doing, what is done, what remains, active file paths, and critical context not to lose"
 echo "Claude: read this file and continue from 'What remains' after compaction."

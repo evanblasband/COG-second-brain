@@ -1,6 +1,6 @@
 ---
 name: brief-people-updater
-description: Update people profiles in 05-knowledge/people/ with new information from brief data, meetings, or Slack
+description: Update people profiles in 02-people/ with new information from brief data, meetings, or Slack
 model: sonnet
 ---
 
