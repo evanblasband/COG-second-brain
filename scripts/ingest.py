@@ -312,23 +312,32 @@ def _extract_entities_cli(chunk: str) -> dict:
 
 
 def extract_entities(chunk: str, client) -> dict:
-    """Extract entities from one chunk. Uses CLI backend or direct API depending on USE_CLI_BACKEND."""
+    """Extract entities from one chunk. Uses CLI backend or direct API depending on USE_CLI_BACKEND.
+
+    Auto-falls back to CLI if the API returns a credit-exhausted error.
+    """
     if USE_CLI_BACKEND:
         return _extract_entities_cli(chunk)
 
-    msg = client.messages.create(
-        model=EXTRACTION_MODEL,
-        max_tokens=4096,  # rich documents can need 2k+ tokens for entity JSON
-        system=[
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[{"role": "user", "content": f"DOCUMENT:\n{chunk.strip()}"}],
-    )
-    return _parse_entity_json(msg.content[0].text.strip())
+    try:
+        msg = client.messages.create(
+            model=EXTRACTION_MODEL,
+            max_tokens=4096,  # rich documents can need 2k+ tokens for entity JSON
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": f"DOCUMENT:\n{chunk.strip()}"}],
+        )
+        return _parse_entity_json(msg.content[0].text.strip())
+    except Exception as e:
+        if "credit balance is too low" in str(e) or "payment_required" in str(e) or getattr(e, "status_code", None) == 400 and "credit" in str(e).lower():
+            print("    (API credits exhausted — falling back to CLI)", flush=True)
+            return _extract_entities_cli(chunk)
+        raise
 
 
 # ─── Graph merge ───────────────────────────────────────────────────────────────
