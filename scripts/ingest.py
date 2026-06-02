@@ -449,6 +449,22 @@ def _print_active_filters(filters: dict):
 
 # ─── Drive fetch ──────────────────────────────────────────────────────────────
 
+_GEMINI_TRANSCRIPT_MARKER = "📖 Transcript"
+
+
+def _is_gemini_meeting_notes(name: str) -> bool:
+    """Return True if this is a Google Meet Gemini-generated notes file."""
+    return "Notes by Gemini" in name
+
+
+def _truncate_gemini_summary(text: str) -> str:
+    """Strip the raw transcript from Gemini meeting notes, keeping only the summary."""
+    idx = text.find(_GEMINI_TRANSCRIPT_MARKER)
+    if idx != -1:
+        return text[:idx].rstrip()
+    return text
+
+
 _DRIVE_EXPORT_MIMES = {
     "application/vnd.google-apps.document": "text/plain",
     "application/vnd.google-apps.spreadsheet": "text/csv",
@@ -728,7 +744,8 @@ def _fetch_drive_file_text(service, file_id: str, mime: str, name: str = "") -> 
     return None  # unsupported binary type
 
 
-def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, note: str = ""):
+def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, note: str = "",
+                     full_transcript: bool = False):
     """Fetch a Google Drive file, save locally, then ingest."""
     service = _build_drive_service()
     meta = service.files().get(fileId=file_id, fields="id,name,mimeType", supportsAllDrives=True).execute()
@@ -739,6 +756,12 @@ def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, no
     text = _fetch_drive_file_text(service, file_id, mime, name=name)
     if text is None:
         _die(f"Unsupported file type: {mime}. Supported: Google Docs/Sheets/Slides, PDF, DOCX, XLSX, .drawio.")
+
+    if not full_transcript and _is_gemini_meeting_notes(name):
+        truncated = _truncate_gemini_summary(text)
+        if len(truncated) < len(text):
+            print(f"  [Gemini] Transcript stripped — summary only. Use --full-transcript to include it.")
+            text = truncated
 
     if save_path is None:
         safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
@@ -752,7 +775,7 @@ def fetch_from_drive(file_id: str, save_path, force: bool, yes: bool, client, no
 
 
 def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, client,
-                            note: str = "", filters: dict | None = None):
+                            note: str = "", filters: dict | None = None, full_transcript: bool = False):
     """Recursively fetch and ingest all supported files from a Google Drive folder."""
     filters = filters or {}
     service = _build_drive_service()
@@ -773,7 +796,8 @@ def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, cl
         "total_created": 0, "total_updated": 0, "total_relationships": 0,
         "filtered": 0, "unsupported": 0, "unsupported_names": [],
     }
-    _ingest_drive_folder_recursive(service, folder_id, Path(save_dir), force, yes, client, note, filters, stats)
+    _ingest_drive_folder_recursive(service, folder_id, Path(save_dir), force, yes, client, note, filters, stats,
+                                    full_transcript=full_transcript)
 
     print(f"\n{'─' * 50}")
     print(f"Drive folder ingest complete: {folder_name}")
@@ -793,7 +817,7 @@ def fetch_from_drive_folder(folder_id: str, save_dir, force: bool, yes: bool, cl
 
 def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
                                     force: bool, yes: bool, client, note: str,
-                                    filters: dict, stats: dict):
+                                    filters: dict, stats: dict, full_transcript: bool = False):
     save_dir.mkdir(parents=True, exist_ok=True)
     after = filters.get("after")
     name_contains = (filters.get("name_contains") or "").lower()
@@ -819,7 +843,8 @@ def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
             if fmime == _DRIVE_FOLDER_MIME:
                 safe_sub = "".join(c if c.isalnum() or c in "._-" else "_" for c in fname)
                 print(f"\nFolder: {fname}/")
-                _ingest_drive_folder_recursive(service, fid, save_dir / safe_sub, force, yes, client, note, filters, stats)
+                _ingest_drive_folder_recursive(service, fid, save_dir / safe_sub, force, yes, client, note, filters, stats,
+                                                full_transcript=full_transcript)
                 continue
 
             # Client-side name filters
@@ -845,6 +870,12 @@ def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
                     stats["unsupported"] += 1
                     stats["unsupported_names"].append(fname)
                     continue
+
+                if not full_transcript and _is_gemini_meeting_notes(fname):
+                    truncated = _truncate_gemini_summary(text)
+                    if len(truncated) < len(text):
+                        print(f"  [Gemini] Transcript stripped — summary only.")
+                        text = truncated
 
                 safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in fname)
                 if not safe_name.endswith(".md"):
@@ -900,7 +931,7 @@ def _notion_page_title(page: dict) -> str:
     return "(untitled)"
 
 
-def _blocks_to_md(token: str, block_id: str, depth: int = 0) -> list:
+def _blocks_to_md(token: str, block_id: str, depth: int = 0, full_transcript: bool = True) -> list:
     """Recursively fetch Notion blocks and convert to markdown lines."""
     lines = []
     cursor = None
@@ -966,9 +997,27 @@ def _blocks_to_md(token: str, block_id: str, depth: int = 0) -> list:
             elif btype in ("child_page", "child_database"):
                 lines.append(f"*[Child: {bc.get('title', btype)}]*")
                 continue  # don't recurse into child pages
+            elif btype == "transcription":
+                # Notion meeting recording container. Structure:
+                #   child [0]: empty paragraph → summary children (heading_3 + bullets)
+                #   child [1]: empty paragraph → spacer
+                #   child [2]: empty paragraph → raw transcript paragraphs
+                # When full_transcript=False, skip containers whose first grandchild is a plain paragraph.
+                if block.get("has_children"):
+                    child_data = _notion_req(token, "GET", f"/blocks/{block['id']}/children?page_size=100")
+                    for child_block in child_data.get("results", []):
+                        if not child_block.get("has_children"):
+                            continue
+                        if not full_transcript:
+                            peek = _notion_req(token, "GET", f"/blocks/{child_block['id']}/children?page_size=1")
+                            first_results = peek.get("results", [])
+                            if first_results and first_results[0].get("type") == "paragraph":
+                                continue  # transcript container — skip
+                        lines.extend(_blocks_to_md(token, child_block["id"], depth, full_transcript=full_transcript))
+                continue  # skip generic has_children recursion below
 
-            if block.get("has_children") and btype not in ("child_page", "child_database"):
-                lines.extend(_blocks_to_md(token, block["id"], depth + 1))
+            if block.get("has_children") and btype not in ("child_page", "child_database", "transcription"):
+                lines.extend(_blocks_to_md(token, block["id"], depth + 1, full_transcript=full_transcript))
 
         if not data.get("has_more"):
             break
@@ -977,7 +1026,7 @@ def _blocks_to_md(token: str, block_id: str, depth: int = 0) -> list:
     return lines
 
 
-def _notion_page_to_md(token: str, page_id: str) -> tuple:
+def _notion_page_to_md(token: str, page_id: str, full_transcript: bool = True) -> tuple:
     """Fetch a Notion page (metadata + blocks) and return (title, markdown)."""
     page = _notion_req(token, "GET", f"/pages/{page_id}")
     title = _notion_page_title(page)
@@ -1023,7 +1072,7 @@ def _notion_page_to_md(token: str, page_id: str) -> tuple:
         if val:
             prop_lines.append(f"**{pname}:** {val}")
 
-    body_lines = _blocks_to_md(token, page_id)
+    body_lines = _blocks_to_md(token, page_id, full_transcript=full_transcript)
 
     parts = [frontmatter, f"\n# {title}\n"]
     if prop_lines:
@@ -1038,7 +1087,8 @@ def _slugify(s: str, max_len: int = 50) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "-" for c in s.lower()).strip("-")[:max_len]
 
 
-def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client, note: str = ""):
+def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client, note: str = "",
+                      full_transcript: bool = False):
     """Fetch a Notion page, save as markdown, then ingest."""
     token = os.getenv("NOTION_TOKEN")
     if not token:
@@ -1049,7 +1099,9 @@ def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client, n
         )
 
     print(f"Fetching Notion page: {page_id}")
-    title, content = _notion_page_to_md(token, page_id)
+    title, content = _notion_page_to_md(token, page_id, full_transcript=full_transcript)
+    if not full_transcript and len(content) > 500:
+        print(f"  [Notion] Transcript stripped — summary only. Use --full-transcript to include it.")
 
     if save_path is None:
         slug = _slugify(title) or page_id[:8]
@@ -1575,6 +1627,8 @@ def main():
     parser.add_argument("--save", metavar="PATH", help="Save fetched content to this path (use with --drive or --notion)")
     parser.add_argument("--use-cli", action="store_true",
                         help="Use `claude -p` subprocess for extraction (subscription billing, no API credits needed)")
+    parser.add_argument("--full-transcript", action="store_true",
+                        help="For Gemini meeting notes: include raw transcript (default strips it, keeping summary only)")
 
     args = parser.parse_args()
 
@@ -1610,17 +1664,21 @@ def main():
     if args.exclude_name:
         filters["exclude_name"] = args.exclude_name
 
+    full_transcript = getattr(args, "full_transcript", False)
+
     if args.drive:
-        fetch_from_drive(args.drive, save, args.force, args.yes, client, note=note)
+        fetch_from_drive(args.drive, save, args.force, args.yes, client, note=note,
+                         full_transcript=full_transcript)
         return
 
     if args.drive_folder:
         fetch_from_drive_folder(args.drive_folder, save, args.force, args.yes, client,
-                                note=note, filters=filters)
+                                note=note, filters=filters, full_transcript=full_transcript)
         return
 
     if args.notion:
-        fetch_from_notion(args.notion, save, args.force, args.yes, client, note=note)
+        fetch_from_notion(args.notion, save, args.force, args.yes, client, note=note,
+                          full_transcript=full_transcript)
         return
 
     if args.notion_db:

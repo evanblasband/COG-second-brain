@@ -100,6 +100,17 @@ When given a URL, first call `research.py` to create the note, then call `ingest
 - If `ANTHROPIC_API_KEY` is missing: clear error message with fix instructions
 - Conflicts (entity type changed on existing node): printed as warnings, original node preserved
 
+## Gemini Meeting Notes — Summary-Only Default
+
+When ingesting a Google Drive file whose name contains **"Notes by Gemini"** (Google Meet auto-generated notes), the script **strips the raw transcript by default**, keeping only the AI summary, decisions, and next steps sections. This avoids burning 10× the tokens on word-for-word conversation that the summary already captures.
+
+To include the full transcript:
+```bash
+python scripts/ingest.py --drive FILE_ID --full-transcript
+```
+
+This default applies to both `--drive` (single file) and `--drive-folder` (recursive). It does **not** affect Notion pages, local files, or any Drive file that isn't a Gemini notes doc.
+
 ## Cost Profile
 
 - Typical vault note (2-5KB): < $0.001
