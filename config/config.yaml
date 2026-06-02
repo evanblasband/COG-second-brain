@@ -53,3 +53,7 @@ context_janitor:
   heavy_run_day: friday
   archive_after_days: 14
   rolling_summary_every: 5        # summarize every N unsummarized session docs
+
+# ── Figma ingest ───────────────────────────────────────────────────────────────
+figma:
+  max_rendered_frames: 5    # top-level frames to render as PNG for visual description (0 = disable)

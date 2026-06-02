@@ -23,6 +23,8 @@ Usage:
     python scripts/ingest.py --notion PAGE_ID                  # fetch Notion page → ingest
     python scripts/ingest.py --notion PAGE_ID --save 04-knowledge/category/name.md
     python scripts/ingest.py --notion-db DB_ID                 # fetch all DB rows → ingest each
+    python scripts/ingest.py --figma FILE_KEY                # fetch Figma file → ingest
+    python scripts/ingest.py --figma FILE_KEY --save 04-knowledge/category/name.md
 
 Environment:
     ANTHROPIC_API_KEY   required (or set in .env)
@@ -931,8 +933,11 @@ def _notion_page_title(page: dict) -> str:
     return "(untitled)"
 
 
-def _blocks_to_md(token: str, block_id: str, depth: int = 0, full_transcript: bool = True) -> list:
+def _blocks_to_md(token: str, block_id: str, depth: int = 0, full_transcript: bool = True,
+                   _stripped: list = None) -> list:
     """Recursively fetch Notion blocks and convert to markdown lines."""
+    if _stripped is None:
+        _stripped = [False]
     lines = []
     cursor = None
     indent = "  " * depth
@@ -1012,12 +1017,15 @@ def _blocks_to_md(token: str, block_id: str, depth: int = 0, full_transcript: bo
                             peek = _notion_req(token, "GET", f"/blocks/{child_block['id']}/children?page_size=1")
                             first_results = peek.get("results", [])
                             if first_results and first_results[0].get("type") == "paragraph":
+                                _stripped[0] = True
                                 continue  # transcript container — skip
-                        lines.extend(_blocks_to_md(token, child_block["id"], depth, full_transcript=full_transcript))
+                        lines.extend(_blocks_to_md(token, child_block["id"], depth, full_transcript=full_transcript,
+                                                   _stripped=_stripped))
                 continue  # skip generic has_children recursion below
 
             if block.get("has_children") and btype not in ("child_page", "child_database", "transcription"):
-                lines.extend(_blocks_to_md(token, block["id"], depth + 1, full_transcript=full_transcript))
+                lines.extend(_blocks_to_md(token, block["id"], depth + 1, full_transcript=full_transcript,
+                                           _stripped=_stripped))
 
         if not data.get("has_more"):
             break
@@ -1072,7 +1080,8 @@ def _notion_page_to_md(token: str, page_id: str, full_transcript: bool = True) -
         if val:
             prop_lines.append(f"**{pname}:** {val}")
 
-    body_lines = _blocks_to_md(token, page_id, full_transcript=full_transcript)
+    stripped = [False]
+    body_lines = _blocks_to_md(token, page_id, full_transcript=full_transcript, _stripped=stripped)
 
     parts = [frontmatter, f"\n# {title}\n"]
     if prop_lines:
@@ -1080,7 +1089,7 @@ def _notion_page_to_md(token: str, page_id: str, full_transcript: bool = True) -
     if body_lines:
         parts.append("\n".join(body_lines))
 
-    return title, "\n\n".join(parts)
+    return title, "\n\n".join(parts), stripped[0]
 
 
 def _slugify(s: str, max_len: int = 50) -> str:
@@ -1099,8 +1108,8 @@ def fetch_from_notion(page_id: str, save_path, force: bool, yes: bool, client, n
         )
 
     print(f"Fetching Notion page: {page_id}")
-    title, content = _notion_page_to_md(token, page_id, full_transcript=full_transcript)
-    if not full_transcript and len(content) > 500:
+    title, content, transcript_stripped = _notion_page_to_md(token, page_id, full_transcript=full_transcript)
+    if transcript_stripped:
         print(f"  [Notion] Transcript stripped — summary only. Use --full-transcript to include it.")
 
     if save_path is None:
@@ -1146,7 +1155,9 @@ def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client, n
 
         for page in data.get("results", []):
             page_id = page["id"]
-            row_title, content = _notion_page_to_md(token, page_id)
+            row_title, content, row_stripped = _notion_page_to_md(token, page_id)
+            if row_stripped:
+                print(f"  [Notion] Transcript stripped — summary only. Use --full-transcript to include it.")
             slug = _slugify(row_title) or page_id[:8]
             path = save_dir / f"{slug}.md"
             path.write_text(content, encoding="utf-8")
@@ -1159,6 +1170,258 @@ def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client, n
         cursor = data.get("next_cursor")
 
     print(f"\nDB ingest complete: {total} pages processed")
+
+
+# ─── Figma ────────────────────────────────────────────────────────────────────
+
+def _parse_figma_key(raw: str) -> str:
+    """Extract a Figma file key from a URL or return the raw string unchanged."""
+    import re as _re
+    m = _re.search(r'/(?:file|design|proto|board)/([a-zA-Z0-9-]+)', raw)
+    if m:
+        return m.group(1)
+    return raw.strip()
+
+
+def _get_figma_headers() -> dict:
+    """Return Figma API headers, sourcing FIGMA_ACCESS_TOKEN from env or .env."""
+    token = os.getenv("FIGMA_ACCESS_TOKEN")
+    if not token:
+        env_file = VAULT_ROOT / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("FIGMA_ACCESS_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+    if not token:
+        _die("FIGMA_ACCESS_TOKEN not set in .env. Get a PAT from figma.com → Account Settings → Personal access tokens")
+    return {"X-Figma-Token": token}
+
+
+def _extract_figma_tree(node: dict, depth: int = 0, max_depth: int = 4) -> list[str]:
+    """Walk a Figma document tree and return a flat list of markdown lines."""
+    lines: list[str] = []
+    ntype = node.get("type", "")
+    name = (node.get("name") or "").strip()
+    children = node.get("children", []) or []
+
+    if ntype == "DOCUMENT":
+        for child in children:
+            lines.extend(_extract_figma_tree(child, depth, max_depth))
+        return lines
+
+    if ntype == "CANVAS":
+        lines.append(f"\n## Page: {name}")
+        for child in children:
+            lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+        return lines
+
+    if ntype == "TEXT":
+        chars = (node.get("characters") or "").strip()
+        if not chars:
+            return lines
+        if len(chars) > 500:
+            chars = chars[:500] + "…"
+        lines.append(f'  - "{chars}"')
+        return lines
+
+    if ntype in ("COMPONENT", "COMPONENT_SET"):
+        if name:
+            lines.append(f"- **Component: {name}**")
+        if depth < max_depth:
+            for child in children:
+                lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+        else:
+            for child in children:
+                if child.get("type") == "TEXT":
+                    lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+        return lines
+
+    if ntype == "INSTANCE":
+        if name:
+            lines.append(f"- {name}")
+        if depth < max_depth:
+            for child in children:
+                lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+        return lines
+
+    if ntype in ("FRAME", "GROUP", "SECTION"):
+        if depth <= 2:
+            header_level = "###" if depth <= 1 else "####"
+            header = f"\n{header_level} {name}" if name else ""
+            before = len(lines)
+            if header:
+                lines.append(header)
+            if depth >= max_depth:
+                for child in children:
+                    if child.get("type") == "TEXT":
+                        lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+            else:
+                for child in children:
+                    lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+            if header and len(lines) == before + 1:
+                lines.pop()
+            return lines
+        else:
+            if depth >= max_depth:
+                for child in children:
+                    if child.get("type") == "TEXT":
+                        lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+            else:
+                for child in children:
+                    lines.extend(_extract_figma_tree(child, depth + 1, max_depth))
+            return lines
+
+    # FigJam node types
+    if ntype in ("STICKY", "SHAPE_WITH_TEXT"):
+        chars = (node.get("characters") or "").strip()
+        if chars:
+            if len(chars) > 500:
+                chars = chars[:500] + "…"
+            label = f"[{ntype.lower().replace('_', ' ')}]" if not name or name == chars else name
+            lines.append(f"- {label}: {chars}" if label != chars else f"- {chars}")
+        elif name:
+            lines.append(f"- {name}")
+        return lines
+
+    if ntype == "CONNECTOR":
+        chars = (node.get("characters") or "").strip()
+        if chars:
+            lines.append(f"- → {chars}")
+        return lines
+
+    return lines
+
+
+def _collect_top_frames(document: dict, max_frames: int) -> list[tuple[str, str]]:
+    frames: list[tuple[str, str]] = []
+    for page in document.get("children", []):
+        if page.get("type") != "CANVAS":
+            continue
+        for child in page.get("children", []):
+            if child.get("type") == "FRAME":
+                fid = child.get("id", "")
+                fname = (child.get("name") or "").strip()
+                if fid and fname:
+                    frames.append((fid, fname))
+                if len(frames) >= max_frames:
+                    return frames
+    return frames
+
+
+def _render_figma_frames(file_key: str, frame_ids: list[str], headers: dict) -> dict[str, bytes]:
+    import requests as _req
+    ids_param = ",".join(frame_ids)
+    resp = _req.get(
+        f"https://api.figma.com/v1/images/{file_key}",
+        headers=headers,
+        params={"ids": ids_param, "format": "png", "scale": "1"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("err"):
+        print(f"  Warning: Figma render error: {data['err']}")
+        return {}
+    image_urls: dict[str, str] = data.get("images", {})
+    result: dict[str, bytes] = {}
+    for node_id, png_url in image_urls.items():
+        if not png_url:
+            continue
+        try:
+            img_resp = _req.get(png_url, timeout=30)
+            img_resp.raise_for_status()
+            result[node_id] = img_resp.content
+        except Exception as e:
+            print(f"  Warning: failed to fetch frame {node_id}: {e}")
+    return result
+
+
+def fetch_from_figma(file_key: str, save_path, force: bool, yes: bool, client, note: str = ""):
+    """Fetch a Figma file, save as markdown, then ingest."""
+    import requests as _req
+
+    headers = _get_figma_headers()
+    url = f"https://api.figma.com/v1/files/{file_key}"
+
+    print(f"Fetching Figma file: {file_key}...")
+    resp = _req.get(url, headers=headers, timeout=30)
+    if resp.status_code == 404:
+        _die(f"Figma file not found: {file_key}. Check the key and that your PAT has access.")
+    if resp.status_code == 403:
+        _die(f"Figma access denied for {file_key}. Check FIGMA_ACCESS_TOKEN permissions.")
+    resp.raise_for_status()
+
+    data = resp.json()
+    file_name = data.get("name", file_key)
+    last_modified = data.get("lastModified", "unknown")
+    document = data.get("document", {})
+
+    print(f"  File: {file_name}")
+    print(f"  Last modified: {last_modified}")
+
+    lines = _extract_figma_tree(document)
+
+    # Visual rendering
+    max_frames = CONFIG.get("figma", {}).get("max_rendered_frames", 5)
+    if max_frames > 0:
+        frames = _collect_top_frames(document, max_frames)
+        if frames:
+            print(f"  Rendering {len(frames)} frame(s) for visual descriptions...")
+            rendered = _render_figma_frames(file_key, [fid for fid, _ in frames], headers)
+            vision_map: dict[str, str] = {}
+            for fid, fname in frames:
+                png_bytes = rendered.get(fid)
+                if png_bytes:
+                    desc = _describe_image(png_bytes, "image/png", context=f"Figma frame: {fname}")
+                    vision_map[fname] = desc
+            if vision_map:
+                injected: list[str] = []
+                for line in lines:
+                    injected.append(line)
+                    stripped = line.strip()
+                    for prefix in ("### ", "#### "):
+                        if stripped.startswith(prefix):
+                            frame_name = stripped[len(prefix):]
+                            if frame_name in vision_map:
+                                injected.append(f"> [Visual: {vision_map[frame_name]}]")
+                            break
+                lines = injected
+
+    body = "\n".join(lines).strip()
+
+    if not body:
+        print("  Warning: no extractable text found in this Figma file.")
+        body = "(no text content extracted)"
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    figma_url = f"https://www.figma.com/file/{file_key}"
+    text = f"""---
+created: {today}
+updated: {today}
+tags: [diagram, figma, design]
+status: reference
+type: knowledge
+source: external
+---
+
+# Figma: {file_name}
+
+Source: {figma_url}
+Last modified: {last_modified}
+
+{body}
+"""
+
+    if save_path is None:
+        safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in file_name)
+        save_path = Path(f"/tmp/figma-{safe}.md")
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save_path.write_text(text, encoding="utf-8")
+    print(f"  Saved to: {save_path}")
+    ingest_file(save_path, force, yes, client, note=note)
 
 
 # ─── Core ingest pipeline ──────────────────────────────────────────────────────
@@ -1443,6 +1706,7 @@ def run_interactive_wizard(client):
     print("  [4] Local files (one or more)")
     print("  [5] Notion page")
     print("  [6] Notion database")
+    print("  [7] Figma file")
     choice = _prompt("\n> ")
 
     sources: list[tuple[str, str]] = []  # (type, id_or_path)
@@ -1484,6 +1748,10 @@ def run_interactive_wizard(client):
         m = _re.search(r'([a-f0-9]{32})', raw.replace('-', ''))
         sid = m.group(1) if m else raw.strip()
         sources = [("notion" if choice == "5" else "notion_db", sid)]
+
+    elif choice == "7":
+        raw = _prompt("\nFigma file key or URL: ")
+        sources = [("figma", _parse_figma_key(raw))]
 
     else:
         print("Invalid choice. Exiting.")
@@ -1532,6 +1800,8 @@ def run_interactive_wizard(client):
             parts.append(f"--notion {sid}")
         elif stype == "notion_db":
             parts.append(f"--notion-db {sid}")
+        elif stype == "figma":
+            parts.append(f"--figma {sid}")
         if filters.get("after"):
             parts.append(f"--after {filters['after'].strftime('%Y-%m-%d')}")
         if filters.get("name_contains"):
@@ -1580,6 +1850,8 @@ def run_interactive_wizard(client):
             fetch_from_notion(sid, None, force, yes, client, note=note)
         elif stype == "notion_db":
             fetch_from_notion_db(sid, None, force, yes, client, note=note)
+        elif stype == "figma":
+            fetch_from_figma(sid, None, force, yes, client, note=note)
 
     # Aggregate summary for multi-file runs
     if len(sources) > 1 and any(s[0] == "local_file" for s in sources):
@@ -1624,6 +1896,8 @@ def main():
     parser.add_argument("--drive-folder", metavar="FOLDER_ID", help="Recursively fetch and ingest all supported files in a Drive folder")
     parser.add_argument("--notion", metavar="PAGE_ID", help="Fetch a Notion page and ingest it")
     parser.add_argument("--notion-db", metavar="DB_ID", help="Fetch all rows from a Notion database and ingest each")
+    parser.add_argument("--figma", metavar="FILE_KEY",
+                        help="Fetch a Figma file and ingest it (accepts file key or figma.com URL)")
     parser.add_argument("--save", metavar="PATH", help="Save fetched content to this path (use with --drive or --notion)")
     parser.add_argument("--use-cli", action="store_true",
                         help="Use `claude -p` subprocess for extraction (subscription billing, no API credits needed)")
@@ -1683,6 +1957,10 @@ def main():
 
     if args.notion_db:
         fetch_from_notion_db(args.notion_db, save, args.force, args.yes, client, note=note)
+        return
+
+    if args.figma:
+        fetch_from_figma(_parse_figma_key(args.figma), save, args.force, args.yes, client, note=note)
         return
 
     if not args.path:

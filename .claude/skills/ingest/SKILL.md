@@ -58,6 +58,21 @@ Use `--yes` to skip all prompts (for automated/cron contexts).
 python scripts/ingest.py path/to/file.md --force
 ```
 
+### Figma file
+
+```bash
+python scripts/ingest.py --figma FILE_KEY
+python scripts/ingest.py --figma FILE_KEY --save 04-knowledge/technologies/my-diagram.md
+```
+
+Accepts a raw file key (e.g. `abc123XYZ`) or a full Figma URL (`figma.com/file/...` or `figma.com/design/...`).
+
+Requires `FIGMA_ACCESS_TOKEN` in `.env` — generate a Personal Access Token at figma.com → Account Settings → Personal access tokens.
+
+Extracts: page names, frame names, component names, text annotations. Produces a markdown note with YAML frontmatter, then runs it through the standard entity extraction pipeline.
+
+Top-level frames are automatically rendered as PNG and described via Claude Haiku vision, injecting `> [Visual: ...]` blocks into the markdown note. Cap is `figma.max_rendered_frames` in `config/config.yaml` (default: 5). Set to `0` to disable rendering (text-only mode).
+
 ### Check what's already been ingested
 
 ```bash
@@ -116,4 +131,5 @@ This default applies to both `--drive` (single file) and `--drive-folder` (recur
 - Typical vault note (2-5KB): < $0.001
 - Large research doc (20KB): ~$0.005
 - Full 04-knowledge/ directory (~8 files, ~40KB): ~$0.02
+- Figma file (typical, 3-5 pages, 5 frames rendered): ~$0.005–0.01
 - Cost gate fires at $0.10/file — essentially never for normal vault notes
