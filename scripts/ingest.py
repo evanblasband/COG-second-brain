@@ -22,7 +22,13 @@ Usage:
     python scripts/ingest.py --drive-folder FOLDER_ID          # recursively ingest entire Drive folder
     python scripts/ingest.py --notion PAGE_ID                  # fetch Notion page → ingest
     python scripts/ingest.py --notion PAGE_ID --save 04-knowledge/category/name.md
+    python scripts/ingest.py --notion-recursive PAGE_ID        # fetch page + all subpages recursively
+    python scripts/ingest.py --notion-recursive PAGE_ID --save 04-knowledge/products/my-product/
     python scripts/ingest.py --notion-db DB_ID                 # fetch all DB rows → ingest each
+    python scripts/ingest.py --github ORG/REPO               # fetch GitHub repo key files → ingest
+    python scripts/ingest.py --github ORG/REPO --save 04-knowledge/code/name.md
+    python scripts/ingest.py --local-repo ~/path/to/repo     # walk local code repo → ingest
+    python scripts/ingest.py --local-repo ~/path/to/repo --save 04-knowledge/code/name.md
     python scripts/ingest.py --figma FILE_KEY                # fetch Figma file → ingest
     python scripts/ingest.py --figma FILE_KEY --save 04-knowledge/category/name.md
 
@@ -294,12 +300,21 @@ def _extract_entities_cli(chunk: str) -> dict:
     Strips ANTHROPIC_API_KEY from the subprocess env so the CLI falls back to OAuth
     rather than billing against the (depleted) API credit balance.
     """
-    import subprocess
+    import subprocess, shutil
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    # Ensure Homebrew and common install locations are in PATH so `claude` is found
+    # when this script is invoked from environments with a stripped PATH.
+    brew_bin = "/opt/homebrew/bin"
+    local_bin = str(Path.home() / ".local" / "bin")
+    env["PATH"] = os.pathsep.join(
+        [p for p in [brew_bin, local_bin] if p not in env.get("PATH", "")]
+        + [env.get("PATH", "")]
+    )
+    claude_bin = shutil.which("claude", path=env["PATH"]) or "claude"
     try:
         result = subprocess.run(
             [
-                "claude", "-p",
+                claude_bin, "-p",
                 "--append-system-prompt", SYSTEM_PROMPT,
                 f"DOCUMENT:\n{chunk.strip()}",
             ],
@@ -1172,6 +1187,65 @@ def fetch_from_notion_db(db_id: str, save_dir, force: bool, yes: bool, client, n
     print(f"\nDB ingest complete: {total} pages processed")
 
 
+def _get_child_page_ids(token: str, page_id: str) -> list:
+    """Return list of (child_page_id, title) for all direct child_page blocks."""
+    result = []
+    cursor = None
+    while True:
+        qs = f"?page_size=100{f'&start_cursor={cursor}' if cursor else ''}"
+        data = _notion_req(token, "GET", f"/blocks/{page_id}/children{qs}")
+        for block in data.get("results", []):
+            if block.get("type") == "child_page":
+                child_id = block["id"].replace("-", "")
+                title = block.get("child_page", {}).get("title", child_id[:8])
+                result.append((child_id, title))
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return result
+
+
+def fetch_from_notion_recursive(page_id: str, save_dir, force: bool, yes: bool, client,
+                                 note: str = "", full_transcript: bool = False, _depth: int = 0,
+                                 _stats: dict = None):
+    """Fetch a Notion page and all its subpages recursively, saving each to save_dir."""
+    token = os.getenv("NOTION_TOKEN")
+    if not token:
+        _die(
+            "NOTION_TOKEN not set.\n"
+            "  Interactive sessions: ask Claude to ingest the Notion page — it uses MCP (no token needed).\n"
+            "  Background/scheduled use: add NOTION_TOKEN to .env"
+        )
+
+    if _stats is None:
+        _stats = {"pages": 0}
+
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Fetching Notion page: {page_id}")
+    title, content, transcript_stripped = _notion_page_to_md(token, page_id, full_transcript=full_transcript)
+    if transcript_stripped:
+        print(f"  [Notion] Transcript stripped — summary only. Use --full-transcript to include it.")
+
+    slug = _slugify(title) or page_id[:8]
+    filename = "index.md" if _depth == 0 else f"{slug}.md"
+    save_path = save_dir / filename
+    save_path.write_text(content, encoding="utf-8")
+    print(f"Saved to: {save_path}")
+    ingest_file(save_path, force, yes, client, note=note)
+    _stats["pages"] += 1
+
+    child_pages = _get_child_page_ids(token, page_id)
+    for child_id, child_title in child_pages:
+        fetch_from_notion_recursive(child_id, save_dir, force, yes, client, note=note,
+                                     full_transcript=full_transcript, _depth=_depth + 1,
+                                     _stats=_stats)
+
+    if _depth == 0:
+        print(f"\nRecursive ingest complete: {_stats['pages']} pages processed")
+
+
 # ─── Figma ────────────────────────────────────────────────────────────────────
 
 def _parse_figma_key(raw: str) -> str:
@@ -1421,6 +1495,328 @@ Last modified: {last_modified}
     save_path.parent.mkdir(parents=True, exist_ok=True)
     save_path.write_text(text, encoding="utf-8")
     print(f"  Saved to: {save_path}")
+    ingest_file(save_path, force, yes, client, note=note)
+
+
+# ─── GitHub fetch ─────────────────────────────────────────────────────────────
+
+def _parse_github_repo(raw: str) -> str:
+    """Extract 'org/repo' from a GitHub URL or return the raw string unchanged."""
+    import re as _re
+    m = _re.search(r'github\.com[/:]([^/\s]+/[^/\s#?]+?)(?:\.git)?(?:[/#?]|$)', raw)
+    if m:
+        return m.group(1).rstrip("/")
+    return raw.strip()
+
+
+# File scoring: (compiled_regex, score). Higher score = fetch first.
+_GH_SKIP_RE = None
+_GH_SCORE_RULES = None
+
+def _gh_compile_rules():
+    global _GH_SKIP_RE, _GH_SCORE_RULES
+    if _GH_SKIP_RE is not None:
+        return
+    import re as _re
+    _GH_SKIP_RE = _re.compile(
+        r'^(node_modules|vendor|dist|build|target|\.gradle|\.git|coverage|__pycache__|\.next)/'
+        r'|\.(lock|sum|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|bin|exe|class|jar|war|zip|gz|pb|pyc)$'
+        r'|/(tests?|specs?|__tests__|fixtures|mocks?|stubs?)/',
+        _re.IGNORECASE,
+    )
+    _GH_SCORE_RULES = [
+        (_re.compile(r'(?i)^README\b'), 100),
+        (_re.compile(r'(?i)^(CONTRIBUTING|CHANGELOG|ARCHITECTURE|DESIGN)\.(md|txt|rst)$'), 80),
+        (_re.compile(r'(?i)(openapi|swagger)\.(yml|yaml|json)$'), 80),
+        (_re.compile(r'(?i)^(build\.gradle(\.kts)?|pom\.xml|CMakeLists\.txt|Makefile|Dockerfile|package\.json)$'), 70),
+        (_re.compile(r'(?i)application\.(yml|yaml|properties)$'), 65),
+        (_re.compile(r'(?i)(schema|migration|flyway|liquibase).*\.(sql|xml)$'), 65),
+        (_re.compile(r'(?i)/(resource|controller|api|router|route|handler)[^/]*\.(java|kt|go|py|ts|js|rb)$'), 55),
+        (_re.compile(r'(?i)(main|application|server|index)\.(java|kt|go|py|ts|js|c|cpp)$'), 52),
+        (_re.compile(r'(?i)/(service|logic|usecase)[^/]*\.(java|kt|go|py|ts|js)$'), 45),
+        (_re.compile(r'(?i)/(model|domain|dto|entity|schema)[^/]*\.(java|kt|go|py|ts|js)$'), 40),
+        (_re.compile(r'\.h$'), 35),
+        (_re.compile(r'\.md$'), 25),
+        (_re.compile(r'\.(yml|yaml)$'), 20),
+        (_re.compile(r'config.*\.json$', 0x02), 18),
+    ]
+
+
+def _score_github_file(path: str) -> int:
+    _gh_compile_rules()
+    if _GH_SKIP_RE.search(path):
+        return -1
+    score = 0
+    for pattern, pts in _GH_SCORE_RULES:
+        if pattern.search(path):
+            score = max(score, pts)
+    return score
+
+
+def _github_tree_summary(files: list, max_lines: int = 60) -> str:
+    """Produce a compact directory tree from a flat file list."""
+    dirs = {}
+    for f in files:
+        parts = f.split("/")
+        for depth in range(1, min(len(parts), 4)):
+            prefix = "/".join(parts[:depth])
+            dirs[prefix] = dirs.get(prefix, 0) + 1
+    lines = []
+    seen = set()
+    for f in sorted(dirs.keys()):
+        depth = f.count("/")
+        if f in seen:
+            continue
+        seen.add(f)
+        indent = "  " * depth
+        name = f.split("/")[-1]
+        count = dirs[f]
+        lines.append(f"{indent}{'└── ' if depth else ''}{name}/  ({count} files)")
+        if len(lines) >= max_lines:
+            lines.append("  ...")
+            break
+    return "\n".join(lines)
+
+
+def fetch_from_github(repo: str, save_path, force: bool, yes: bool, client, note: str = "",
+                      branch: str = None, max_chars: int = 120_000, max_file_chars: int = 12_000):
+    """Fetch a GitHub repo's key files, save as a consolidated markdown note, then ingest."""
+    import urllib.request as _ureq
+    import urllib.error as _uerr
+
+    token = os.getenv("GITHUB_TOKEN")
+    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "cog-ingest/1.0"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    def _gh_req(path: str) -> dict:
+        req = _ureq.Request(f"https://api.github.com{path}", headers=headers)
+        try:
+            with _ureq.urlopen(req, timeout=20) as r:
+                return json.loads(r.read().decode())
+        except _uerr.HTTPError as e:
+            body = e.read().decode()
+            _die(f"GitHub API {path} → {e.code}: {body}")
+
+    def _gh_raw(url: str) -> str:
+        raw_headers = dict(headers)
+        raw_headers["Accept"] = "application/vnd.github.v3.raw"
+        req = _ureq.Request(url, headers=raw_headers)
+        try:
+            with _ureq.urlopen(req, timeout=20) as r:
+                return r.read().decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    print(f"Fetching GitHub repo: {repo}")
+
+    meta = _gh_req(f"/repos/{repo}")
+    description = meta.get("description") or ""
+    default_branch = branch or meta.get("default_branch", "main")
+    language = meta.get("language") or ""
+    topics = meta.get("topics", [])
+    stars = meta.get("stargazers_count", 0)
+
+    print(f"  Branch: {default_branch} | Language: {language}")
+
+    tree_data = _gh_req(f"/repos/{repo}/git/trees/{default_branch}?recursive=1")
+    if tree_data.get("truncated"):
+        print("  Warning: tree truncated by GitHub API (very large repo)")
+
+    all_files = [f["path"] for f in tree_data.get("tree", []) if f.get("type") == "blob"]
+    print(f"  {len(all_files)} files in repo")
+
+    # Score and select files
+    scored = [(path, _score_github_file(path)) for path in all_files]
+    scored = [(p, s) for p, s in scored if s > 0]
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    selected_files = []
+    for path, score in scored:
+        if len(selected_files) >= 40:
+            break
+        selected_files.append(path)
+
+    print(f"  Selected {len(selected_files)} files for extraction")
+
+    # Fetch file contents
+    sections = []
+    total_chars = 0
+    for fpath in selected_files:
+        if total_chars >= max_chars:
+            print(f"  Reached {max_chars:,} char budget — stopping early")
+            break
+        raw_url = f"https://raw.githubusercontent.com/{repo}/{default_branch}/{fpath}"
+        content = _gh_raw(raw_url)
+        if not content.strip():
+            continue
+        truncation_note = ""
+        if len(content) > max_file_chars:
+            content = content[:max_file_chars]
+            truncation_note = f"\n... [truncated at {max_file_chars:,} chars]"
+        ext = fpath.rsplit(".", 1)[-1] if "." in fpath else ""
+        sections.append(f"### {fpath}\n```{ext}\n{content}{truncation_note}\n```")
+        total_chars += len(content)
+
+    print(f"  Fetched {total_chars:,} chars from {len(sections)} files")
+
+    # Build the consolidated note
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    frontmatter = (
+        f"---\n"
+        f"created: {today}\n"
+        f"updated: {today}\n"
+        f"tags: [github, code, imported]\n"
+        f"status: reference\n"
+        f"type: knowledge\n"
+        f"source: external\n"
+        f"github_repo: {repo}\n"
+        f"github_url: https://github.com/{repo}\n"
+        f"github_branch: {default_branch}\n"
+        f"---"
+    )
+
+    header_lines = [f"# {repo}\n"]
+    if description:
+        header_lines.append(f"**Description:** {description}")
+    if language:
+        header_lines.append(f"**Primary Language:** {language}")
+    if topics:
+        header_lines.append(f"**Topics:** {', '.join(topics)}")
+    if stars:
+        header_lines.append(f"**Stars:** {stars}")
+
+    tree_summary = _github_tree_summary(all_files)
+    header_lines.append(f"\n## Repository Structure\n\n```\n{tree_summary}\n```")
+
+    parts = [frontmatter, "\n".join(header_lines)]
+    if sections:
+        parts.append("## Key Files\n\n" + "\n\n".join(sections))
+
+    content = "\n\n".join(parts)
+
+    if save_path is None:
+        slug = _slugify(repo.replace("/", "-"))
+        save_path = Path(f"04-knowledge/code/{slug}.md")
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save_path.write_text(content, encoding="utf-8")
+    print(f"Saved to: {save_path}")
+    ingest_file(save_path, force, yes, client, note=note)
+
+
+def fetch_from_local_repo(repo_path: str, save_path, force: bool, yes: bool, client,
+                           note: str = "", max_chars: int = 120_000, max_file_chars: int = 12_000):
+    """Walk a local code repo, extract key files, save as a consolidated markdown note, then ingest."""
+    repo_dir = Path(repo_path).expanduser().resolve()
+    if not repo_dir.is_dir():
+        _die(f"Local repo path not found: {repo_dir}")
+
+    repo_name = repo_dir.name
+    print(f"Scanning local repo: {repo_dir}")
+
+    # Collect all files with relative paths
+    all_files = []
+    for root, dirs, files in os.walk(repo_dir):
+        # Prune hidden dirs and common noise dirs in-place
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in (
+            "node_modules", "vendor", "dist", "build", "target", ".gradle",
+            "coverage", "__pycache__", ".next", "venv", ".venv",
+        )]
+        for fname in files:
+            fpath = Path(root) / fname
+            rel = str(fpath.relative_to(repo_dir))
+            all_files.append(rel)
+
+    print(f"  {len(all_files)} files found")
+
+    # Score and sort
+    scored = [(path, _score_github_file(path)) for path in all_files]
+    scored = sorted([(p, s) for p, s in scored if s > 0], key=lambda x: x[1], reverse=True)
+    selected = [p for p, _ in scored[:50]]
+
+    print(f"  Selected {len(selected)} files for extraction")
+
+    # Read file contents
+    sections = []
+    total_chars = 0
+    for rel_path in selected:
+        if total_chars >= max_chars:
+            print(f"  Reached {max_chars:,} char budget — stopping early")
+            break
+        try:
+            content = (repo_dir / rel_path).read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        if not content.strip():
+            continue
+        truncation_note = ""
+        if len(content) > max_file_chars:
+            content = content[:max_file_chars]
+            truncation_note = f"\n... [truncated at {max_file_chars:,} chars]"
+        ext = rel_path.rsplit(".", 1)[-1] if "." in rel_path else ""
+        sections.append(f"### {rel_path}\n```{ext}\n{content}{truncation_note}\n```")
+        total_chars += len(content)
+
+    print(f"  Extracted {total_chars:,} chars from {len(sections)} files")
+
+    # Try to get a description from README first line
+    description = ""
+    for readme_name in ("README.md", "README.txt", "README.rst", "README"):
+        readme = repo_dir / readme_name
+        if readme.exists():
+            for line in readme.read_text(errors="replace").splitlines():
+                line = line.strip().lstrip("#").strip()
+                if line and not line.startswith("!"):
+                    description = line
+                    break
+            break
+
+    # Try to detect primary language from file extensions
+    ext_counts: dict = {}
+    for f in all_files:
+        if "." in f:
+            e = f.rsplit(".", 1)[-1].lower()
+            if e in ("java", "kt", "py", "go", "ts", "js", "c", "cpp", "h", "rb", "swift"):
+                ext_counts[e] = ext_counts.get(e, 0) + 1
+    language = max(ext_counts, key=lambda k: ext_counts[k]) if ext_counts else ""
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    frontmatter = (
+        f"---\n"
+        f"created: {today}\n"
+        f"updated: {today}\n"
+        f"tags: [github, code, local]\n"
+        f"status: reference\n"
+        f"type: knowledge\n"
+        f"source: internal\n"
+        f"local_repo: {repo_dir}\n"
+        f"---"
+    )
+
+    header_lines = [f"# {repo_name}\n"]
+    if description:
+        header_lines.append(f"**Description:** {description}")
+    if language:
+        header_lines.append(f"**Primary Language:** {language}")
+
+    tree_summary = _github_tree_summary(all_files)
+    header_lines.append(f"\n## Repository Structure\n\n```\n{tree_summary}\n```")
+
+    parts = [frontmatter, "\n".join(header_lines)]
+    if sections:
+        parts.append("## Key Files\n\n" + "\n\n".join(sections))
+
+    note_content = "\n\n".join(parts)
+
+    if save_path is None:
+        save_path = Path(f"04-knowledge/code/{_slugify(repo_name)}.md")
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save_path.write_text(note_content, encoding="utf-8")
+    print(f"Saved to: {save_path}")
     ingest_file(save_path, force, yes, client, note=note)
 
 
@@ -1895,7 +2291,16 @@ def main():
     parser.add_argument("--drive", metavar="FILE_ID", help="Fetch a Google Drive file and ingest it")
     parser.add_argument("--drive-folder", metavar="FOLDER_ID", help="Recursively fetch and ingest all supported files in a Drive folder")
     parser.add_argument("--notion", metavar="PAGE_ID", help="Fetch a Notion page and ingest it")
+    parser.add_argument("--notion-recursive", metavar="PAGE_ID",
+                        help="Fetch a Notion page and all its subpages recursively; --save must be a directory")
     parser.add_argument("--notion-db", metavar="DB_ID", help="Fetch all rows from a Notion database and ingest each")
+    parser.add_argument("--github", metavar="REPO",
+                        help="Fetch a GitHub repo (org/repo or URL) and ingest key files. "
+                             "Requires GITHUB_TOKEN in .env for private repos.")
+    parser.add_argument("--github-branch", metavar="BRANCH",
+                        help="Branch to use with --github (default: repo default branch)")
+    parser.add_argument("--local-repo", metavar="PATH",
+                        help="Walk a local code repo directory, extract key files, and ingest")
     parser.add_argument("--figma", metavar="FILE_KEY",
                         help="Fetch a Figma file and ingest it (accepts file key or figma.com URL)")
     parser.add_argument("--save", metavar="PATH", help="Save fetched content to this path (use with --drive or --notion)")
@@ -1955,12 +2360,27 @@ def main():
                           full_transcript=full_transcript)
         return
 
+    if args.notion_recursive:
+        save_dir = save if save else Path(f"04-knowledge/products/notion-{args.notion_recursive[:8]}")
+        fetch_from_notion_recursive(args.notion_recursive, save_dir, args.force, args.yes, client,
+                                     note=note, full_transcript=full_transcript)
+        return
+
     if args.notion_db:
         fetch_from_notion_db(args.notion_db, save, args.force, args.yes, client, note=note)
         return
 
     if args.figma:
         fetch_from_figma(_parse_figma_key(args.figma), save, args.force, args.yes, client, note=note)
+        return
+
+    if args.github:
+        fetch_from_github(_parse_github_repo(args.github), save, args.force, args.yes, client,
+                          note=note, branch=getattr(args, "github_branch", None))
+        return
+
+    if args.local_repo:
+        fetch_from_local_repo(args.local_repo, save, args.force, args.yes, client, note=note)
         return
 
     if not args.path:
