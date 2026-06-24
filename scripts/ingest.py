@@ -484,9 +484,11 @@ def _truncate_gemini_summary(text: str) -> str:
 
 _DRIVE_EXPORT_MIMES = {
     "application/vnd.google-apps.document": "text/plain",
-    "application/vnd.google-apps.spreadsheet": "text/csv",
     "application/vnd.google-apps.presentation": "text/plain",
 }
+
+# Google Sheets are exported as XLSX so all sheets are captured (CSV only exports the active sheet)
+_GSHEET_MIME = "application/vnd.google-apps.spreadsheet"
 
 _PDF_MIME = "application/pdf"
 _DRAWIO_MIME = "application/vnd.jgraph.mxgraph"
@@ -695,7 +697,8 @@ _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 
@@ -732,6 +735,11 @@ def _fetch_drive_file_text(service, file_id: str, mime: str, name: str = "") -> 
     if export_mime:
         content = service.files().export(fileId=file_id, mimeType=export_mime).execute()
         return content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+
+    if mime == _GSHEET_MIME:
+        print("  Extracting text from Google Sheet (all sheets)...")
+        raw = service.files().export(fileId=file_id, mimeType=_XLSX_MIME).execute()
+        return _extract_xlsx_content(raw)
 
     import io
     from googleapiclient.http import MediaIoBaseDownload
@@ -849,6 +857,8 @@ def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
             "q": q,
             "fields": "nextPageToken, files(id, name, mimeType)",
             "pageSize": 100,
+            "includeItemsFromAllDrives": True,
+            "supportsAllDrives": True,
         }
         if cursor:
             kwargs["pageToken"] = cursor
@@ -875,7 +885,7 @@ def _ingest_drive_folder_recursive(service, folder_id: str, save_dir: Path,
 
             is_drawio = fmime == _DRAWIO_MIME or fname.lower().endswith(".drawio")
             is_office = fmime in (_DOCX_MIME, _XLSX_MIME)
-            if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME and not is_drawio and not is_office:
+            if fmime not in _DRIVE_EXPORT_MIMES and fmime != _PDF_MIME and fmime != _GSHEET_MIME and not is_drawio and not is_office:
                 stats["unsupported"] += 1
                 stats["unsupported_names"].append(fname)
                 continue
