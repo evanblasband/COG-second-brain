@@ -40,11 +40,13 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import sys
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,6 +59,7 @@ except ImportError:
     pass
 
 GRAPH_FILE = VAULT_ROOT / "graph" / "graph.json"
+GRAPH_LOCK_FILE = VAULT_ROOT / "graph" / ".graph.lock"
 MANIFEST_FILE = VAULT_ROOT / "graph" / "ingest_manifest.json"
 CONFLICTS_FILE = VAULT_ROOT / "graph" / "conflicts.json"
 HOOKS_DIR = VAULT_ROOT / ".claude" / "hooks"
@@ -175,6 +178,18 @@ def save_graph(graph: dict):
     graph["metadata"]["total_relationships"] = len(graph["relationships"])
     with open(GRAPH_FILE, "w") as f:
         json.dump(graph, f, indent=2, default=str)
+
+
+@contextmanager
+def _graph_lock():
+    """Exclusive file lock around graph.json read-merge-write — safe for parallel ingest."""
+    GRAPH_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(GRAPH_LOCK_FILE, "w") as lf:
+        try:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
 
 
 # ─── Manifest I/O ──────────────────────────────────────────────────────────────
@@ -1888,27 +1903,32 @@ def ingest_file(path: Path, force: bool, yes: bool, client, note: str = "") -> d
         all_relationships.extend(result.get("relationships", []))
         print(f"{n} entities")
 
-    # Merge nodes
-    created = updated = 0
-    for entity in all_entities:
-        if entity.get("type") not in ENTITY_TYPES:
-            continue
-        _, was_created = merge_node(graph, entity, source_key)
-        if was_created:
-            created += 1
-        else:
-            updated += 1
+    # Acquire exclusive lock, re-read latest graph, merge, and save atomically.
+    # Re-reading inside the lock ensures parallel ingest workers each see the
+    # freshest state and don't overwrite each other's entity data.
+    with _graph_lock():
+        graph = load_graph()
 
-    # Build name→id map for relationship resolution (after all nodes merged)
-    name_to_id = {node["name"].lower(): nid for nid, node in graph["nodes"].items()}
-    rels_added = 0
-    for rel in all_relationships:
-        before = len(graph["relationships"])
-        merge_relationship(graph, rel, name_to_id)
-        if len(graph["relationships"]) > before:
-            rels_added += 1
+        created = updated = 0
+        for entity in all_entities:
+            if entity.get("type") not in ENTITY_TYPES:
+                continue
+            _, was_created = merge_node(graph, entity, source_key)
+            if was_created:
+                created += 1
+            else:
+                updated += 1
 
-    save_graph(graph)
+        # Build name→id map for relationship resolution (after all nodes merged)
+        name_to_id = {node["name"].lower(): nid for nid, node in graph["nodes"].items()}
+        rels_added = 0
+        for rel in all_relationships:
+            before = len(graph["relationships"])
+            merge_relationship(graph, rel, name_to_id)
+            if len(graph["relationships"]) > before:
+                rels_added += 1
+
+        save_graph(graph)
 
     # Auto-update people CRM if this looks like a meeting document
     _maybe_update_people(path, content, source_key)
