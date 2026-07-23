@@ -82,6 +82,8 @@ vault/
 | File operations (vault reads/writes) | Sonnet | `worker-file-ops` |
 | Pre-approved API calls, mutations | Sonnet | `worker-executor` |
 | People profile updates | Sonnet | `brief-people-updater` |
+| Publishing (Slack, Confluence, Notion, webhooks) | Sonnet | `worker-publisher` |
+| Requirements → epics & stories breakdown | Sonnet | `system-analyst` |
 | Reasoning, synthesis, writing | Opus | Lead session (no delegation) |
 | Strategic decisions, editorial judgment | Opus | Lead session (no delegation) |
 
@@ -129,9 +131,9 @@ Current integrations: GitHub (active), Google Calendar (active), Gmail (active),
 
 See `AGENTS.md` for full worker agent specifications.
 
-**Core workers (6):** `worker-data-collector`, `worker-researcher`, `worker-file-ops`, `worker-executor`, `worker-publisher`, `brief-people-updater`
+**Core workers (7):** `worker-data-collector`, `worker-researcher`, `worker-file-ops`, `worker-executor`, `worker-publisher`, `brief-people-updater`, `system-analyst`
 
-**Skills (23):** `auto-research`, `braindump`, `comprehensive-analysis`, `compress`, `daily-brief`, `daily-plan`, `decide`, `eval`, `generate-prd`, `ingest`, `knowledge-consolidation`, `meeting-transcript`, `mistake`, `onboarding`, `playbook`, `prep`, `scout`, `team-brief`, `update-cog`, `update-knowledge-base`, `url-dump`, `weekly-checkin`, `weekly-summary`
+**Skills (25):** `auto-research`, `braindump`, `cog-backlog`, `comprehensive-analysis`, `compress`, `daily-brief`, `daily-plan`, `decide`, `eval`, `generate-prd`, `ingest`, `knowledge-consolidation`, `meeting-transcript`, `mistake`, `onboarding`, `playbook`, `prep`, `scout`, `system-analyst`, `team-brief`, `update-cog`, `update-knowledge-base`, `url-dump`, `weekly-checkin`, `weekly-summary`
 
 ---
 

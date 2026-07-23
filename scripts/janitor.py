@@ -60,7 +60,7 @@ def load_config() -> dict:
         janitor = raw.get("context_janitor", {})
         return {
             "archive_after_days": janitor.get("archive_after_days", _DEFAULTS["archive_after_days"]),
-            "staleness_threshold": raw.get("knowledge_graph", {}).get(
+            "staleness_threshold": raw.get("kb_maintenance", {}).get(
                 "staleness_threshold", _DEFAULTS["staleness_threshold"]
             ),
             "rolling_summary_every": janitor.get("rolling_summary_every", _DEFAULTS["rolling_summary_every"]),

@@ -23,7 +23,7 @@ from pathlib import Path
 
 VAULT_ROOT = Path(__file__).parent.parent
 
-# Sonnet 4.6 pricing (USD per million tokens)
+# Sonnet 5 pricing (USD per million tokens)
 PRICING = {
     "input": 3.00,
     "cache_write": 3.75,

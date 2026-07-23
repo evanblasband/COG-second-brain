@@ -7,8 +7,8 @@ graph_path: "./graph"
 # ── Model tiers ────────────────────────────────────────────────────────────────
 models:
   extraction: "claude-haiku-4-5-20251001"   # entity extraction, classification, tagging
-  default: "claude-sonnet-4-6"              # reasoning, synthesis, most agent work
-  heavy: "claude-opus-4-7"                  # complex multi-step, high-stakes deliverables
+  default: "claude-sonnet-5"                # reasoning, synthesis, most agent work
+  heavy: "claude-opus-4-8"                  # complex multi-step, high-stakes deliverables
 
 # ── Cost limits ────────────────────────────────────────────────────────────────
 cost_limits:

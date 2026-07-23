@@ -583,9 +583,25 @@ This document defines the available commands/skills for AI agents interacting wi
 
 ---
 
+### /system-analyst
+
+**Description:** Break down product requirements, PRDs, or feature specs into structured epics and stories with dependency mapping.
+
+**Triggers:**
+- `/system-analyst`
+- "break this down into epics and stories"
+- "turn this spec into development tasks"
+- after `/generate-prd`
+
+**Purpose:** Invoke the `system-analyst` agent to translate PM/CTO requirements into actionable, properly-sequenced development work items (epics → stories sized ~1–3 engineer-days, with `depends_on`/`blocked_by` notation, recommended execution order, and a risk summary). Runs pre-flight vault scans of `03-projects/` and `04-knowledge/` before breaking down the work.
+
+**Output location:** `03-projects/`
+
+---
+
 ## Worker Agents
 
-COG includes 6 specialized worker agents (`.claude/agents/`) that handle data-heavy tasks using Sonnet while the lead session (Opus) handles reasoning and synthesis. Inspired by [garrytan/gstack](https://github.com/garrytan/gstack) specialist sessions and [garrytan/gbrain](https://github.com/garrytan/gbrain) knowledge patterns.
+COG includes 7 specialized agents (`.claude/agents/`). Six are data-heavy workers that run on Sonnet while the lead session (Opus) handles reasoning and synthesis; the seventh (`system-analyst`) is a planning agent for requirements breakdown. Inspired by [garrytan/gstack](https://github.com/garrytan/gstack) specialist sessions and [garrytan/gbrain](https://github.com/garrytan/gbrain) knowledge patterns.
 
 | Agent | What it does | When it's used |
 |---|---|---|
@@ -595,6 +611,7 @@ COG includes 6 specialized worker agents (`.claude/agents/`) that handle data-he
 | **worker-executor** | Pre-approved mutations (Jira transitions, Linear updates) | Team brief sync-back, issue management |
 | **worker-publisher** | Publishing to Slack, Confluence, Notion, webhooks | Brief publishing, wiki sync |
 | **brief-people-updater** | Batch-update people profiles from meetings/briefs | After team briefs, meeting processing |
+| **system-analyst** | Breaks PRDs/requirements into epics & stories with dependency mapping | After `/generate-prd` or when given PM/CTO requirements (via the `/system-analyst` skill) |
 
 **Key rule:** Workers write results to `/tmp/{task-slug}.md` and return only a short status + file path. The lead session reads the file for synthesis.
 
@@ -624,9 +641,9 @@ Create profiles manually using the template at `templates/people-profile-templat
 
 ```
 COG-second-brain/
-├── .claude/agents/        # Worker agent definitions (6)
+├── .claude/agents/        # Worker agent definitions (7)
 ├── .claude/roles/         # Role packs for personalized recommendations
-├── .claude/skills/        # Skill definitions (23 skills)
+├── .claude/skills/        # Skill definitions (25 skills)
 ├── .claude/hooks/         # Automation hooks (session-start, session-end, etc.)
 ├── 00-inbox/              # Landing zone, profile files
 │   ├── MY-PROFILE.md      # User profile with role pack (created by onboarding)
