@@ -89,3 +89,22 @@ Files written:
 - Does not delete any file — only reports what could be pruned and writes summaries
 - Does not modify OPEN_LOOPS.md without user confirmation on each item
 - Does not touch 04-knowledge/ or 05-decisions/ — those are permanent records
+
+## Common Rationalizations
+
+| Excuse | Why it's wrong |
+|--------|----------------|
+| "Nothing looks that old, I'll skip the scan." | The 14-day cutoff is a date check, not a vibe. Run it — stale files hide in plain sight. |
+| "I'll just delete the old sessions, that's what compress means." | Compress **archives**, never deletes. Deleting loses the rolling-summary source. |
+| "The manifest is probably fine." | Stale manifest entries silently break `ingest-scan`. Check paths-on-disk every run. |
+| "I'll prune these open loops without asking — they're obviously resolved." | Each OPEN_LOOPS item needs user confirmation. "Obviously resolved" is how real waiting-fors get dropped. |
+
+## Verification
+
+Before reporting `/compress complete`, confirm with evidence — not "seems done":
+
+- [ ] Archived-session count matches the number of files actually moved into `AI/sessions/archive/` (list them).
+- [ ] Each rolling summary written actually exists on disk (path + non-zero size).
+- [ ] Every OPEN_LOOPS.md change was individually confirmed by the user.
+- [ ] Manifest stale-entry count matches entries actually removed (or zero, stated explicitly).
+- [ ] The report's numbers are read back from the filesystem, not estimated.

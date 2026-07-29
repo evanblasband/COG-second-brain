@@ -133,3 +133,22 @@ This default applies to both `--drive` (single file) and `--drive-folder` (recur
 - Full 04-knowledge/ directory (~8 files, ~40KB): ~$0.02
 - Figma file (typical, 3-5 pages, 5 frames rendered): ~$0.005–0.01
 - Cost gate fires at $0.10/file — essentially never for normal vault notes
+
+## Common Rationalizations
+
+| Excuse | Why it's wrong |
+|--------|----------------|
+| "The script exited 0, so it worked." | Exit 0 with zero nodes/relationships added means extraction silently produced nothing. Check the counts, not the exit code. |
+| "It's already ingested, I'll skip the hash check." | The hash check is what makes re-ingest safe and idempotent. Skipping it risks duplicate or missed updates. |
+| "The manifest will update itself." | Confirm the manifest entry actually changed (`nodes_created`/`updated`, timestamp). A missing entry means the merge didn't persist. |
+| "Close enough — I'll report success." | Ingest mutates `graph/graph.json`. "Close enough" on a graph write is a silent corruption waiting to surface downstream. |
+
+## Verification
+
+Before reporting an ingest as done, confirm with evidence:
+
+- [ ] `graph/ingest_manifest.json` has a fresh entry for the file with a current timestamp.
+- [ ] Node and relationship counts changed as expected (report the deltas; zero is a red flag unless the file is genuinely empty of entities).
+- [ ] `graph/graph.json` still parses as valid JSON after the merge.
+- [ ] If a meeting doc: the People CRM auto-update ran (profiles created/updated), or it's stated why it didn't.
+- [ ] No new off-enum relationship types were introduced (the extraction prompt pins the allowed set).
