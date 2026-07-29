@@ -98,6 +98,10 @@ Workers write results to a file and return only a short status + path. Never ret
 | < 2K tokens | Return inline |
 | ≥ 2K tokens | Write to `/tmp/{task-slug}.md`, return path only |
 
+### Orchestration Doctrine
+
+The lead session (or a skill) is the orchestrator. **Workers do not call other workers**, and any fan-out to multiple workers ends in a single named merge/synthesis step back in the lead session. This is a deliberate flat lead→worker topology, not a platform limit (subagents *can* nest since v2.1.172) — chosen for simpler reasoning, visible cost, and no depth-compounded context loss. The five patterns COG uses (Direct / Single-worker skill / Parallel fan-out + merge / Sequential user-driven pipeline / Research isolation), the named anti-patterns, and the "when to add a new orchestrated workflow" bar are in `04-knowledge/patterns/agent-orchestration-patterns.md`. Do not build council/voting/debate flows for routine work; the one endorsed multi-agent upgrade is a verification-subagent (single critic) on high-stakes deliverables only.
+
 ---
 
 ## Brain-First Knowledge Protocol

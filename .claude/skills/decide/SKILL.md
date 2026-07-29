@@ -110,3 +110,21 @@ Tell the user:
   Summary: Use graph.json (flat file) for V1; migrate to SQLite at ~5k nodes
   MEMORY.md updated: yes
 ```
+
+## Common Rationalizations
+
+| Excuse | Why it's wrong |
+|--------|----------------|
+| "The decision is obvious, I'll skip the alternatives." | The rejected alternatives + why are the most valuable part for future-you. A decision with no alternatives is just an assertion. |
+| "I'll capture the gist, rationale can be terse." | Six months from now the rationale *is* the record. Vague rationale makes the log unqueryable. |
+| "I'll write the file later." | `/decide` that doesn't write the file did nothing. The durable artifact is the point. |
+| "Confidence is basically high." | State it honestly — a hedged medium/low is a signal to revisit, and pretending high hides risk. |
+
+## Verification
+
+Before confirming a decision is logged, check with evidence:
+
+- [ ] `05-decisions/YYYY-MM-DD-{slug}.md` exists on disk with the decision, rationale, alternatives-rejected, and an explicit confidence level.
+- [ ] If MEMORY.md was updated, the new `## Key Decisions` line actually appears there (read it back).
+- [ ] The confirmation message's file path matches the file that was actually written.
+- [ ] Any related OPEN_LOOPS.md items that this decision resolves are flagged for the user (append-only logs are never silently edited).
