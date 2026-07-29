@@ -100,6 +100,12 @@ Workers write results to a file and return only a short status + path. Never ret
 
 ---
 
+## Testing
+
+COG has a pytest suite in `tests/`. Run it with `.venv/bin/pytest -q` (dev dep in `requirements-dev.txt`). Scripts are importable by module name inside tests (`conftest.py` adds `scripts/` to `sys.path`); shared fixtures (`sample_graph`, `sample_graph_file`, `sample_config`) live in `tests/conftest.py`. Tests must not hit the network — mock external APIs. Code changes with real invariants ship with tests in the same change; see `tests/README.md`.
+
+---
+
 ## Brain-First Knowledge Protocol
 
 Before answering any question about people, projects, strategy, decisions, or domain context:
