@@ -46,8 +46,12 @@ if [[ -x "$PYTHON" ]]; then
     >> /tmp/session-summarizer.log 2>&1 &
   disown $!
 
-  # Append cost data once — skip if already present
+  # Append cost data once — skip if already present. `|| true` so a non-zero
+  # exit here never becomes the hook's exit code.
   if ! grep -q "## Session Cost" "$SUMMARY_FILE" 2>/dev/null; then
-    "$PYTHON" "$VAULT_DIR/scripts/cost_report.py" session --append-to "$SUMMARY_FILE" 2>/dev/null
+    "$PYTHON" "$VAULT_DIR/scripts/cost_report.py" session --append-to "$SUMMARY_FILE" 2>/dev/null || true
   fi
 fi
+
+# Best-effort hook: never surface a helper's failure as a Stop-hook error.
+exit 0
