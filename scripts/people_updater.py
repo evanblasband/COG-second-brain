@@ -136,6 +136,24 @@ def _load_domain_org() -> dict[str, str]:
 
 _DOMAIN_ORG: dict[str, str] = _load_domain_org()
 
+# Home org for internal-vs-external CRM tagging — set VAULT_HOME_ORG in .env
+# (gitignored) so no employer name lives in tracked code. VAULT_HOME_ORG_TAG
+# overrides the internal tag string (default "internal"). If VAULT_HOME_ORG is
+# unset, everyone is tagged "external".
+_HOME_ORG = os.environ.get("VAULT_HOME_ORG", "").strip()
+_HOME_ORG_TAG = os.environ.get("VAULT_HOME_ORG_TAG", "internal").strip() or "internal"
+
+
+def _org_tag(org: str, home_org: str | None = None, home_tag: str | None = None) -> str:
+    """Return the internal-org tag if `org` matches the configured home org, else "external".
+
+    `home_org`/`home_tag` default to the module-level values loaded from .env;
+    they're parameters so the logic is unit-testable without touching the env.
+    """
+    home_org = _HOME_ORG if home_org is None else home_org
+    home_tag = _HOME_ORG_TAG if home_tag is None else home_tag
+    return home_tag if (home_org and org == home_org) else "external"
+
 
 # ─── Frontmatter parsing ───────────────────────────────────────────────────────
 
@@ -515,7 +533,7 @@ def create_stub_profile(
     """Create a new minimal CRM stub in 02-people/."""
     PEOPLE_DIR.mkdir(parents=True, exist_ok=True)
 
-    org_tag = "sage" if org == "Sage Health" else "external"
+    org_tag = _org_tag(org)
     tags = ["crm", org_tag, "people"]
 
     entry_lines = []
