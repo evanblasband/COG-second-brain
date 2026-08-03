@@ -86,7 +86,7 @@ List any mistake files created this week. Extract: what happened, prevention rul
 
 ## Synthesis Rules
 
-- **Be specific, not vague.** "Reviewed Gen3 manufacturing timeline with Tim Hearn" not "had a meeting."
+- **Be specific, not vague.** "Reviewed the manufacturing timeline with the hardware lead" not "had a meeting."
 - **Quantify where possible.** Files created, decisions made, loops closed, meetings held, session costs.
 - **Career log lens.** Would a hiring manager or future-you care about this fact in 2 years? If yes, include it. If no, trim.
 - **Group by project/domain**, not by day. Cross-day synthesis is more valuable than a day-by-day log.

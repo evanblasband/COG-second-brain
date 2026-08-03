@@ -40,7 +40,7 @@ Scan graph.json for:
 
 Map coverage against the role's required knowledge domains:
 - Sage platform architecture and device portfolio
-- Gen3 device specifics (sensors, data points, connectivity)
+- Core product/device specifics (sensors, data points, connectivity)
 - Connectivity topology and failure modes
 - Foundry data platform structure
 - Cross-functional team workflows and handoffs

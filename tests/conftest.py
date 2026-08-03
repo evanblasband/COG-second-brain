@@ -40,8 +40,11 @@ def sample_graph() -> dict:
       - `owned_by` (canonical) AND `owns_by` (malformed variant) coexist  -> P1-2
       - a singleton relationship type `provides`                          -> P1-2
       - a near-duplicate Person pair ("Dana O." / "Dana Okafor")
-        that share a neighbor (Gen3)                                      -> P1-6 / P3-1
-      - a hub node (Gen3) with a known 1-hop / 2-hop neighborhood         -> P2-1
+        that share a neighbor (Project Atlas)                             -> P1-6 / P3-1
+      - a hub node (Project Atlas) with a known 1-hop / 2-hop neighborhood -> P2-1
+
+    All names/orgs/products below are FICTIONAL placeholders — do not use real
+    people, employers, or product codenames in committed fixtures (public repo).
     """
     def node(id_, type_, name, desc):
         return {
@@ -58,22 +61,22 @@ def sample_graph() -> dict:
         }
 
     nodes = {
-        "n_matt":  node("n_matt",  "Person",       "Dana Okafor", "HW engineer"),
-        "n_mattj": node("n_mattj", "Person",       "Dana O.",            "HW engineer on Gen3"),
-        "n_gen3":  node("n_gen3",  "Project",      "Gen3",              "Gen3 wearable program"),
-        "n_lora":  node("n_lora",  "Technology",   "LoRa",              "LPWAN protocol"),
-        "n_ble":   node("n_ble",   "Technology",   "BLE",               "Bluetooth Low Energy"),
-        "n_sage":  node("n_sage",  "Organization", "Sage Health",       "Senior-living tech company"),
+        "n_p1":   node("n_p1",   "Person",       "Dana Okafor",   "HW engineer"),
+        "n_p2":   node("n_p2",   "Person",       "Dana O.",       "HW engineer on Project Atlas"),
+        "n_proj": node("n_proj", "Project",      "Project Atlas", "wearable device program"),
+        "n_lora": node("n_lora", "Technology",   "LoRa",          "LPWAN protocol"),
+        "n_ble":  node("n_ble",  "Technology",   "BLE",           "Bluetooth Low Energy"),
+        "n_org":  node("n_org",  "Organization", "Acme Devices",  "hardware company"),
     }
 
     relationships = [
-        rel("r1", "n_matt",  "n_gen3", "part_of",  "Matthew works on Gen3"),
-        rel("r2", "n_mattj", "n_gen3", "part_of",  "Dana O. works on Gen3"),   # shared neighbor -> dedup signal
-        rel("r3", "n_gen3",  "n_lora", "uses",     "Gen3 uses LoRa"),
-        rel("r4", "n_gen3",  "n_ble",  "uses",     "Gen3 uses BLE"),
-        rel("r5", "n_gen3",  "n_sage", "owned_by", "Gen3 owned by Sage"),     # canonical
-        rel("r6", "n_lora",  "n_sage", "owns_by",  "malformed variant"),      # P1-2 target
-        rel("r7", "n_sage",  "n_lora", "provides", "singleton relationship"),  # P1-2 singleton
+        rel("r1", "n_p1",   "n_proj", "part_of",  "Dana Okafor works on Project Atlas"),
+        rel("r2", "n_p2",   "n_proj", "part_of",  "Dana O. works on Project Atlas"),  # shared neighbor -> dedup signal
+        rel("r3", "n_proj", "n_lora", "uses",     "Project Atlas uses LoRa"),
+        rel("r4", "n_proj", "n_ble",  "uses",     "Project Atlas uses BLE"),
+        rel("r5", "n_proj", "n_org",  "owned_by", "Project Atlas owned by Acme"),      # canonical
+        rel("r6", "n_lora", "n_org",  "owns_by",  "malformed variant"),       # P1-2 target
+        rel("r7", "n_org",  "n_lora", "provides", "singleton relationship"),   # P1-2 singleton
     ]
 
     return {
