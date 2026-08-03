@@ -132,6 +132,7 @@ RULES:
 - Confidence 0.9 = explicitly stated fact; 0.7 = implied; 0.5 = inferred
 - Use canonical names (e.g. "Bluetooth Low Energy" not "BLE")
 - Extract 0-15 entities per chunk; quality over quantity
+- Relationship "type" MUST be exactly one of: depends_on, is_a, part_of, competes_with, regulates, uses, owned_by, implements. Never invent a new relationship type string (no "owns", "enables", "used_by", "generates", etc.) — pick the closest canonical type, flipping source/target if needed (e.g. "X owns Y" → Y owned_by X). If none fit, omit the relationship.
 - If no clear entities exist in this chunk, return {{"entities": [], "relationships": []}}"""
 
 # Rendered once at startup — static across all extract_entities calls
